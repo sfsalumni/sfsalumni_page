@@ -13,6 +13,7 @@ import {
   statusFromAmounts,
 } from '@/lib/events/balance';
 import { selectCatalog } from '@/lib/events/catalog-select';
+import { isEventSoftDeleted } from '@/lib/events/soft-delete';
 import type { EventCatalog } from '@/lib/events/types';
 import { repriceEventRegistrations } from '@/lib/events/reprice';
 import {
@@ -302,6 +303,9 @@ export async function registerAccountForEvent(
   }
 
   const catalog = event as unknown as EventCatalog;
+  if (isEventSoftDeleted(catalog)) {
+    return { status: 404, payload: { error: 'Event not found or not published' } };
+  }
 
   // Attendance: the alumnus attends, or at least one guest is coming. Otherwise nothing is saved.
   const requestedGuests = Number(body.number_of_guests ?? 0);

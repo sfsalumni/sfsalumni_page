@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { selectCatalog } from '@/lib/events/catalog-select';
 import { eventIsOpen } from '@/lib/events/open';
+import { isEventSoftDeleted } from '@/lib/events/soft-delete';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,13 @@ export async function GET(_request: Request, ctx: { params: { id: string } }) {
     admin.from('event_catalog').select(columns).eq('id', ctx.params.id).eq('published', true).maybeSingle()
   );
 
-  if (error || !data || !eventIsOpen(data as unknown as { published?: boolean; starts_at: string; ends_at?: string | null }, new Date())) {
+  const row = data as unknown as {
+    published?: boolean;
+    starts_at: string;
+    ends_at?: string | null;
+    deleted_at?: string | null;
+  } | null;
+  if (error || !row || isEventSoftDeleted(row) || !eventIsOpen(row, new Date())) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
   return NextResponse.json(data, {

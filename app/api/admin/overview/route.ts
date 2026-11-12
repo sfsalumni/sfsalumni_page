@@ -20,9 +20,16 @@ export async function GET() {
   let amountPaidPaise = 0;
   let amountDuePaiseTotal = 0;
 
-  const events = await admin.from('event_catalog').select('id').eq('published', true);
-  const catalogReady = !events.error;
-  if (catalogReady) publishedEvents = (events.data || []).length;
+  const withDeleted = await admin.from('event_catalog').select('id,deleted_at').eq('published', true);
+  let catalogReady = false;
+  if (!withDeleted.error) {
+    catalogReady = true;
+    publishedEvents = (withDeleted.data || []).filter((e) => !e.deleted_at).length;
+  } else {
+    const fallback = await admin.from('event_catalog').select('id').eq('published', true);
+    catalogReady = !fallback.error;
+    if (catalogReady) publishedEvents = fallback.data?.length || 0;
+  }
 
   const regs = await admin
     .from('event_registrations')

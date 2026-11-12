@@ -23,12 +23,14 @@ export type EventCatalog = {
   /** Committee email for refund requests; null/blank hides CTA. */
   refund_email?: string | null;
   is_primary: boolean;
+  /** Soft-delete timestamp; null/undefined = active. */
+  deleted_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
 
 export const EVENT_SELECT =
-  'id,title,summary,description,starts_at,ends_at,venue,published,lunch_paise,dinner_paise,parking_2w_paise,parking_4w_paise,base_ticket_paise,fee_batch_from,fee_batch_to,fee_batch_paise,refund_email,is_primary,created_at,updated_at';
+  'id,title,summary,description,starts_at,ends_at,venue,published,lunch_paise,dinner_paise,parking_2w_paise,parking_4w_paise,base_ticket_paise,fee_batch_from,fee_batch_to,fee_batch_paise,refund_email,is_primary,deleted_at,created_at,updated_at';
 
 /** Pre–fee-batch-range columns (migration not applied yet). */
 export const EVENT_SELECT_LEGACY =

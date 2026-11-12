@@ -9,9 +9,9 @@ import type { EventCatalog } from '@/lib/events/types';
 
 const FALLBACK = {
   id: 'fallback',
-  eyebrow: 'Celebrating 50 Years • 1976 – 2026',
-  title: 'Golden Jubilee & Alumni Homecoming',
-  body: 'Honoring 50 glorious years of transformational education, enduring memories, and fraternal unity at SFS Shanthinagar. Calling all alumni, revered faculty, and students to reunite.',
+  eyebrow: 'Welcome to SFS Alumni Association',
+  title: 'Welcome to SFS Alumni Association',
+  body: '',
   meta: '',
 };
 

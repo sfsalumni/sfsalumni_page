@@ -29,6 +29,7 @@ import {
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
 import { useInrExchangeRate, type DisplayCurrency } from '@/lib/registration/currency';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     BATCH_OPTIONS,
     COUNTRY_OPTIONS,
@@ -65,14 +66,13 @@ export interface RegistrationFormProps {
     donationLocked: boolean;
     paymentRoute: PaymentRoute;
     setPaymentRoute: (route: PaymentRoute) => void;
-    /** Bank reference as the user is editing it. Saved by Save changes when the bank route is used. */
-    bankReferenceDraft: string;
-    setBankReferenceDraft: (value: string) => void;
-    /** Bank reference as last saved. */
+    bankAccount: BankAccountPublic | null;
+    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
+    /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
+    onOfflineSubmitted: (message: string) => void;
     saveMessage: string;
     error: string;
-    onSaveBankReference: (reference: string) => Promise<string | null>;
     onSubmit: (event: FormEvent) => void;
     onPayNow: () => void;
 }
@@ -190,12 +190,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
         donationLocked,
         paymentRoute,
         setPaymentRoute,
-        bankReferenceDraft,
-        setBankReferenceDraft,
+        bankAccount,
+        onPrepareOfflinePay,
         savedBankReference,
+        onOfflineSubmitted,
         saveMessage,
         error,
-        onSaveBankReference,
         onSubmit,
         onPayNow,
     } = props;
@@ -542,9 +542,10 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             donationLocked={donationLocked}
                             paymentRoute={paymentRoute}
                             setPaymentRoute={setPaymentRoute}
-                            bankReferenceDraft={bankReferenceDraft}
-                            setBankReferenceDraft={setBankReferenceDraft}
-                            onSaveBankReference={onSaveBankReference}
+                            bankAccount={bankAccount}
+                            onPrepareOfflinePay={onPrepareOfflinePay}
+                            savedBankReference={savedBankReference}
+                            onOfflineSubmitted={onOfflineSubmitted}
                             displayCurrency={displayCurrency}
                             exchange={exchange}
                         />

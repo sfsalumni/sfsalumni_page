@@ -3,7 +3,7 @@
 // Name, email and phone come from the signed-in alumni account (alumni_accounts), not from this form.
 // When the committee has verified a registration, the server reports committee_confirmed and the
 // page shows the confirmed state with the registration code, and no payment is asked for.
-// Save changes also stores an edited bank reference. Pay saves the form first, then pays.
+// Bank / UPI proof is submitted via OfflinePayModal (UTR and/or screenshot). Pay saves the form first, then pays.
 // On reopen, a saved bank reference restores the bank-transfer route so the user lands where they left off.
 // Parking: a yes/no plus 2-wheeler and 4-wheeler counts. Total vehicles may not exceed guests + 1.
 
@@ -47,11 +47,11 @@ import { RegistrationSuccess } from '@/components/registration_page/registration
 import type { PaymentRoute } from '@/components/registration_page/registration-donation';
 import { previewMoney } from '@/lib/registration/preview';
 import {
-    BANK_REFERENCE_ENDPOINT,
     toCheckoutOrder,
     type OrderApiResponse,
     type VerifyResponse,
 } from '@/lib/registration/payment-types';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     choicesFingerprint,
     donationFormFromPaise,
@@ -186,10 +186,9 @@ function RegistrationPageInner() {
     const [money, setMoney] = useState<RegistrationMoney>(EMPTY_MONEY);
     const [committeeConfirmed, setCommitteeConfirmed] = useState(false);
     const [registrationId, setRegistrationId] = useState<string | null>(null);
-    /** Bank reference as the database last returned it. Used to tell whether the draft has changed. */
+    /** Bank / UPI reference as last submitted for verification. */
     const [savedBankReference, setSavedBankReference] = useState('');
-    /** Bank reference as the user is editing it. Saved together with the form. */
-    const [bankReferenceDraft, setBankReferenceDraft] = useState('');
+    const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
     /** Fingerprint of the choices as last saved. Differs from the form when edits are unsaved. */
     const [savedFingerprint, setSavedFingerprint] = useState('');
     const [paymentRoute, setPaymentRoute] = useState<PaymentRoute>('portal');
@@ -369,7 +368,6 @@ function RegistrationPageInner() {
             setMoney(EMPTY_MONEY);
             setCommitteeConfirmed(false);
             setSavedBankReference('');
-            setBankReferenceDraft('');
             return null;
         }
 
@@ -391,8 +389,6 @@ function RegistrationPageInner() {
             const nextForm = formFromPrefill(prefill);
             setFormData(nextForm);
             setSavedFingerprint(choicesFingerprint(nextForm));
-            // Show the saved reference in the box, and keep the bank route if one was saved.
-            setBankReferenceDraft(bankReference);
             if (bankReference) {
                 setPaymentRoute('bank');
             }
@@ -411,6 +407,29 @@ function RegistrationPageInner() {
         // Runs once per user and event. loadSavedRegistration reads no changing state.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, event?.id, gate]);
+
+    useEffect(() => {
+        if (!user?.id || gate !== 'ok') {
+            setBankAccount(null);
+            return;
+        }
+        let cancel = false;
+        void (async () => {
+            try {
+                const res = await fetch('/api/payments/active-account', { cache: 'no-store' });
+                const payload = (await res.json().catch(() => ({}))) as {
+                    account?: BankAccountPublic;
+                };
+                if (cancel) return;
+                setBankAccount(res.ok && payload.account ? payload.account : null);
+            } catch {
+                if (!cancel) setBankAccount(null);
+            }
+        })();
+        return () => {
+            cancel = true;
+        };
+    }, [user?.id, gate]);
 
     /**
      * Checks the form fields and the account contact. Returns the account's phone in E.164 for saving.
@@ -479,27 +498,8 @@ function RegistrationPageInner() {
         return { ok: true, e164 };
     }
 
-    /** Stores the bank reference on a saved registration. Returns an error message, or null on success. */
-    async function postBankReference(regId: string, reference: string): Promise<string | null> {
-        try {
-            const res = await fetch(BANK_REFERENCE_ENDPOINT, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ registrationId: regId, bank_reference: reference }),
-            });
-            if (!res.ok) {
-                const payload = (await res.json().catch(() => ({}))) as { error?: string };
-                return payload.error || 'Could not save the bank reference. Please try again.';
-            }
-            return null;
-        } catch {
-            return 'Could not save the bank reference. Please try again.';
-        }
-    }
-
     /**
-     * Writes the form to the database, stores the bank reference if it changed, then reloads the
-     * saved amounts. Never opens checkout.
+     * Writes the form to the database, then reloads the saved amounts. Never opens checkout.
      */
     async function saveRegistration(e?: FormEvent): Promise<LoadedRegistration | null> {
         e?.preventDefault();
@@ -555,21 +555,6 @@ function RegistrationPageInner() {
                 setError('Saved, but the amounts could not be reloaded. Refresh the page.');
                 setSaving(false);
                 return null;
-            }
-
-            // Store the bank reference too, but only when the bank route is in use and the text changed.
-            const draft = bankReferenceDraft.trim();
-            const referenceChanged = draft !== (loaded.bankReference || '').trim();
-            if (paymentRoute === 'bank' && draft && referenceChanged) {
-                const refError = await postBankReference(loaded.id, draft);
-                if (refError) {
-                    setError(`Registration saved, but ${refError.charAt(0).toLowerCase()}${refError.slice(1)}`);
-                    setSavedFingerprint(choicesFingerprint(formData));
-                    setSaving(false);
-                    return null;
-                }
-                setSavedBankReference(draft);
-                loaded.bankReference = draft;
             }
 
             setSavedFingerprint(choicesFingerprint(formData));
@@ -696,24 +681,22 @@ function RegistrationPageInner() {
         await payNow();
     }
 
-    /**
-     * "Save reference" button in the bank section. Saves the form first if it has unsaved edits,
-     * then stores the reference. Returns an error message, or null on success.
-     */
-    async function saveBankReference(reference: string): Promise<string | null> {
-        setBankReferenceDraft(reference);
+    /** Saves the form if needed, then returns the registration id for the offline pay modal. */
+    async function prepareOfflinePay(): Promise<{ registrationId: string } | { error: string }> {
         let regId = registrationId;
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
-            if (!loaded) return 'Fix the errors on the form, then save the reference again.';
+            if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
             regId = loaded.id;
         }
-        if (!regId) return 'Could not find your registration. Please try again.';
+        if (!regId) return { error: 'Could not find your registration. Please try again.' };
+        return { registrationId: regId };
+    }
 
-        const refError = await postBankReference(regId, reference.trim());
-        if (refError) return refError;
-        setSavedBankReference(reference.trim());
-        return null;
+    function handleOfflineSubmitted(message: string) {
+        setSaveMessage(message);
+        setError('');
+        if (event?.id) void loadSavedRegistration(event.id, false);
     }
 
     function acceptPreRegistration(match: PreRegistrationData) {
@@ -734,9 +717,7 @@ function RegistrationPageInner() {
         setCurrentStep('details');
     }
 
-    const referenceDirty = bankReferenceDraft.trim() !== savedBankReference.trim();
-    const formDirty =
-        (!savedFingerprint || choicesFingerprint(formData) !== savedFingerprint) || (paymentRoute === 'bank' && referenceDirty);
+    const formDirty = !savedFingerprint || choicesFingerprint(formData) !== savedFingerprint;
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
@@ -794,12 +775,12 @@ function RegistrationPageInner() {
                 donationLocked={donationLocked}
                 paymentRoute={paymentRoute}
                 setPaymentRoute={setPaymentRoute}
-                bankReferenceDraft={bankReferenceDraft}
-                setBankReferenceDraft={setBankReferenceDraft}
+                bankAccount={bankAccount}
+                onPrepareOfflinePay={prepareOfflinePay}
                 savedBankReference={savedBankReference}
+                onOfflineSubmitted={handleOfflineSubmitted}
                 saveMessage={saveMessage}
                 error={error}
-                onSaveBankReference={saveBankReference}
                 onSubmit={(e) => {
                     void saveRegistration(e);
                 }}

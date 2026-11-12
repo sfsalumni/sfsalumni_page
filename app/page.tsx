@@ -73,17 +73,6 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
-                <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
-                  15,000+
-                </span>
-                <span className="text-label-md uppercase tracking-wider text-surface-container-high mt-1">
-                  SFS Alumni Worldwide
-                </span>
-                <span className="text-label-sm text-on-primary-container">
-                  Spanning 5 Decades
-                </span>
-              </div>
 
               <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
                 <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
@@ -100,7 +89,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
+              {/* <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
                 <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
                   Grand
                 </span>
@@ -110,7 +99,7 @@ export default function HomePage() {
                 <span className="text-label-sm text-on-primary-container">
                   Reunions & Campus Gala
                 </span>
-              </div>
+              </div> */}
             </div>
           </div>
         </section>
