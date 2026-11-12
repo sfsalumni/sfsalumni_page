@@ -2,7 +2,7 @@
 
 Alumni portal for **St. Francis de Sales High School, Shanthinagar, Secunderabad** — built for the **Golden Jubilee (1976–2026)** homecoming.
 
-Next.js app with table-based alumni login, event registration + Razorpay payments, member directory, stories & memories, donations, day-of gate check-in, and a committee admin workspace (including installable PWAs).
+Next.js app with table-based alumni login, event registration + Razorpay payments, member directory, stories & memories, donations, day-of gate check-in, and a committee admin workspace (including installable PWAs). 
 
 ## Features
 
