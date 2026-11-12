@@ -169,7 +169,7 @@ export function ConfirmPrefillScreen({ preRegData, onAccept, onReject }: Confirm
                         <div className="flex justify-between">
                             <span className="text-label-md text-on-surface-variant">Name:</span>
                             <span className="text-body-md text-primary font-semibold">
-                                {preRegData.full_name} {preRegData.last_name}
+                                {preRegData.full_name}
                             </span>
                         </div>
                         <div className="flex justify-between">

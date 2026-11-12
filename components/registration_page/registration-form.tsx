@@ -301,7 +301,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     <dt className="text-on-surface-variant">Name</dt>
                                     <dd className="text-on-surface">
                                         {accountContact?.full_name || '—'}
-                                        {accountContact?.last_name ? ` ${accountContact.last_name}` : ''}
                                     </dd>
                                     <dt className="text-on-surface-variant">Email</dt>
                                     <dd className="text-on-surface break-all">{accountContact?.email || '—'}</dd>
