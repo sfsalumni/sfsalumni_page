@@ -416,7 +416,7 @@ function RegistrationPageInner() {
         let cancel = false;
         void (async () => {
             try {
-                const res = await fetch('/api/payments/active-account', { cache: 'no-store' });
+                const res = await fetch('/api/payments/bank-details', { cache: 'no-store' });
                 const payload = (await res.json().catch(() => ({}))) as {
                     account?: BankAccountPublic;
                 };
@@ -696,7 +696,8 @@ function RegistrationPageInner() {
     function handleOfflineSubmitted(message: string) {
         setSaveMessage(message);
         setError('');
-        if (event?.id) void loadSavedRegistration(event.id, false);
+        setSavedBankReference('Pending committee review');
+        setPaymentRoute('bank');
     }
 
     function acceptPreRegistration(match: PreRegistrationData) {

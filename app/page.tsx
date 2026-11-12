@@ -57,53 +57,6 @@ export default function HomePage() {
 
         <Hero />
 
-        {/* STATS BAR */}
-        <section className="w-full bg-primary-container text-on-primary py-8 shadow-md relative z-10">
-          <div className="max-w-7xl mx-auto px-6 lg:px-12">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8 items-center text-center">
-              <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
-                <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
-                  50
-                </span>
-                <span className="text-label-md uppercase tracking-wider text-surface-container-high mt-1">
-                  Years of Excellence
-                </span>
-                <span className="text-label-sm text-on-primary-container">
-                  1976 – 2026 Milestone
-                </span>
-              </div>
-
-
-              <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
-                <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
-                  4
-                </span>
-                <span className="text-label-md uppercase tracking-wider text-surface-container-high mt-1">
-                  House Traditions
-                </span>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" title="Blue House"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" title="Red House"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" title="Green House"></span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" title="Yellow House"></span>
-                </div>
-              </div>
-
-              {/* <div className="flex flex-col items-center p-3 rounded-lg bg-tertiary-container/30">
-                <span className="text-headline-lg lg:text-numeral-jubilee text-secondary-fixed">
-                  Grand
-                </span>
-                <span className="text-label-md uppercase tracking-wider text-surface-container-high mt-1">
-                  50th Celebrations
-                </span>
-                <span className="text-label-sm text-on-primary-container">
-                  Reunions & Campus Gala
-                </span>
-              </div> */}
-            </div>
-          </div>
-        </section>
-
         {/* PRINCIPAL'S MESSAGE */}
         <section className="w-full bg-surface-ivory py-16 lg:py-20">
           <div className="max-w-7xl mx-auto px-6 lg:px-12">

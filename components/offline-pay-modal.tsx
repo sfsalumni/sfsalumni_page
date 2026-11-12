@@ -7,6 +7,8 @@ import {
   type BankAccountPublic,
 } from '@/lib/payments/bank-details';
 
+export type { BankAccountPublic };
+
 type Props = {
   open: boolean;
   onClose: () => void;

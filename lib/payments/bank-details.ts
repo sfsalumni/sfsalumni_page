@@ -11,7 +11,6 @@ export type BankAccountPublic = {
 };
 
 export const OFFLINE_PROOF_MAX_BYTES = 4_000_000;
-export const OFFLINE_PROOF_BUCKET = 'payment-proofs';
 
 const PROOF_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -21,6 +20,14 @@ const PROOF_MIME: Record<string, string> = {
 
 const ACCOUNT_NUMBER_RE = /^\d{6,18}$/;
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+export function normalizeIfsc(raw: unknown): string | null {
+  const s = String(raw ?? '')
+    .trim()
+    .toUpperCase();
+  if (!IFSC_RE.test(s)) return null;
+  return s;
+}
 
 export function formatInr(paise: number): string {
   return `₹${(paise / 100).toLocaleString('en-IN', {
@@ -80,8 +87,8 @@ export function validateBankAccountFields(input: BankAccountInput): {
     throw new Error('Account number must be 6–18 digits');
   }
 
-  const ifsc = String(input.ifsc || '').trim().toUpperCase();
-  if (!IFSC_RE.test(ifsc)) {
+  const ifsc = normalizeIfsc(input.ifsc);
+  if (!ifsc) {
     throw new Error('IFSC must look like SBIN0001234');
   }
 
@@ -151,12 +158,26 @@ export function toBankAccountPublic(row: {
   };
 }
 
-export function paymentProofObjectPath(
-  sourceType: 'registration' | 'donation',
-  sourceId: string,
-  objectId: string,
-  ext: string
-): string {
-  const cleanExt = ext.replace(/^\./, '').toLowerCase();
-  return `${sourceType}/${sourceId}/${objectId}.${cleanExt}`;
+/** Admin form input (camelCase or snake_case). */
+export function assertPaymentAccountInput(body: Record<string, unknown>): {
+  label: string;
+  account_name: string;
+  account_number: string;
+  ifsc: string;
+  bank_name: string | null;
+  upi_id: string | null;
+  active: boolean;
+  sort_order: number;
+} {
+  const base = validateBankAccountFields({
+    label: String(body.label ?? ''),
+    account_name: String(body.accountName ?? body.account_name ?? ''),
+    account_number: String(body.accountNumber ?? body.account_number ?? ''),
+    ifsc: String(body.ifsc ?? ''),
+    bank_name: (body.bankName ?? body.bank_name) as string | null | undefined,
+    upi_id: (body.upiId ?? body.upi_id) as string | null | undefined,
+  });
+  const active = body.active === true || body.active === 'true';
+  const sort_order = Math.trunc(Number(body.sortOrder ?? body.sort_order) || 0);
+  return { ...base, active, sort_order };
 }

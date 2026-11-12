@@ -238,7 +238,7 @@ function BankTransferSection({
 
             {savedBankReference ? (
                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
-                    Proof on file. Reference: <span className="font-semibold tabular-nums">{savedBankReference}</span>
+                    {savedBankReference}
                 </p>
             ) : null}
 
