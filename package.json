@@ -1,0 +1,44 @@
+{
+  "name": "golden-jubilee",
+  "version": "1.0.0",
+  "description": "St. Francis de Sales High School Golden Jubilee (1976-2026) Alumni Registration Platform",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.8.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "bcryptjs": "^3.0.3",
+    "jose": "^6.2.13",
+    "jsqr": "^1.4.0",
+    "next": "^14.0.0",
+    "qrcode": "^1.5.4",
+    "razorpay": "^2.9.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/web-push": "^3.6.4",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.50.0",
+    "eslint-config-next": "^14.0.0",
+    "postcss": "^8.5.31",
+    "typescript": "^5.3.0",
+    "vercel": "^65.2.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
