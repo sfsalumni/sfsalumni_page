@@ -1,17 +1,14 @@
 // components/registration_page/registration-form.tsx
 // The details form. Holds no save or payment logic: values and handlers come from the page.
 // Name, email and phone come from the alumni account and are shown read-only, not typed here.
-// Amounts shown are `displayMoney` (saved, or a live preview while edited). The Pay button is
-// hidden when the bank-transfer route is selected.
+// Amounts shown are `displayMoney` (saved, or a live preview while edited).
+// Payment is Bank / UPI only (offline proof).
 // Parking: total vehicles (2-wheelers + 4-wheelers) cannot exceed guests + 1 (the alumnus).
 
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
 import BackHomeLink from '@/components/back-home-link';
 import SearchableSelect from '@/components/searchable-select';
-import {
-    DonationSection,
-    type PaymentRoute,
-} from '@/components/registration_page/registration-donation';
+import { DonationSection } from '@/components/registration_page/registration-donation';
 import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
 import {
     anyoneEating,
@@ -56,15 +53,12 @@ export interface RegistrationFormProps {
     hasSavedReg: boolean;
     busy: boolean;
     saving: boolean;
-    paying: boolean;
     /** Saved amounts from the database. Used for the status line only. */
     money: RegistrationMoney;
     /** Amounts to show: saved, or a live preview while the form has unsaved edits. */
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
-    paymentRoute: PaymentRoute;
-    setPaymentRoute: (route: PaymentRoute) => void;
     bankAccount: BankAccountPublic | null;
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     /** Bank / UPI reference last submitted for verification. */
@@ -73,7 +67,6 @@ export interface RegistrationFormProps {
     saveMessage: string;
     error: string;
     onSubmit: (event: FormEvent) => void;
-    onPayNow: () => void;
 }
 
 const INPUT_CLASS =
@@ -182,13 +175,10 @@ export function RegistrationForm(props: RegistrationFormProps) {
         hasSavedReg,
         busy,
         saving,
-        paying,
         money,
         displayMoney,
         formDirty,
         donationLocked,
-        paymentRoute,
-        setPaymentRoute,
         bankAccount,
         onPrepareOfflinePay,
         savedBankReference,
@@ -196,7 +186,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
         saveMessage,
         error,
         onSubmit,
-        onPayNow,
     } = props;
 
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
@@ -256,13 +245,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
         setFormData({ ...formData, four_wheeler_count: Math.min(requested, fourWheelerMax) });
     }
 
-    const payLabel =
-        paying
-            ? 'Opening payment…'
-            : displayMoney.totalDuePaise > 0
-              ? `${formDirty ? 'Save & pay' : 'Pay'} ${formatCostForDisplay(displayMoney.totalDuePaise)}`
-              : 'Nothing due';
-
     return (
         <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 pt-20 pb-12">
             <div className="w-full max-w-3xl">
@@ -276,10 +258,10 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     </h1>
                     <p className={`text-body-sm text-on-surface-variant ${hasSavedReg ? 'mb-4' : 'mb-8'}`}>
                         {hasSavedReg
-                            ? 'Change your attendance, lunch, guests, or parking anytime. Amounts update as you edit. Pay saves your changes first.'
+                            ? 'Change your attendance, lunch, guests, or parking anytime. Amounts update as you edit. Use Bank / UPI below to pay what is due.'
                             : event
                               ? `Register for ${event.title}`
-                              : 'Complete your registratione for the alumni meet'}
+                              : 'Complete your registration for the alumni meet'}
                     </p>
                     {hasSavedReg && (
                         <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm text-on-secondary-fixed-variant mb-8">
@@ -536,8 +518,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             displayMoney={displayMoney}
                             formDirty={formDirty}
                             donationLocked={donationLocked}
-                            paymentRoute={paymentRoute}
-                            setPaymentRoute={setPaymentRoute}
                             bankAccount={bankAccount}
                             onPrepareOfflinePay={onPrepareOfflinePay}
                             savedBankReference={savedBankReference}
@@ -572,17 +552,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             >
                                 {saving ? 'Saving…' : hasSavedReg ? 'Save changes' : 'Save registration'}
                             </button>
-
-                            {paymentRoute === 'portal' && (
-                                <button
-                                    type="button"
-                                    onClick={onPayNow}
-                                    disabled={busy || displayMoney.totalDuePaise <= 0}
-                                    className="flex-1 py-3 rounded-lg bg-secondary-container text-on-secondary-fixed text-label-md uppercase tracking-wider font-bold hover:bg-secondary-fixed disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
-                                >
-                                    {payLabel}
-                                </button>
-                            )}
                         </div>
                     </form>
 

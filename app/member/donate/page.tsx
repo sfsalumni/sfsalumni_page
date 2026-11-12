@@ -11,7 +11,6 @@ import {
   DONATION_MAX_MESSAGE,
 } from '@/lib/donations/validate';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
-import { openRazorpayCheckout } from '@/lib/payments/checkout-client';
 
 type Cause = {
   id: string;
@@ -31,14 +30,12 @@ export default function MemberDonatePage() {
   const [useCustom, setUseCustom] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
   const [offlineOpen, setOfflineOpen] = useState(false);
   const [offlineNote, setOfflineNote] = useState('');
   const [success, setSuccess] = useState<{
     amount_paise: number;
     causeTitle: string;
-    paymentId: string;
   } | null>(null);
 
   useEffect(() => {
@@ -88,82 +85,24 @@ export default function MemberDonatePage() {
     return chipPaise;
   }
 
-  async function onPay(e: FormEvent) {
-    e.preventDefault();
+  function openBankPay(e?: FormEvent) {
+    e?.preventDefault();
     setError('');
     setSuccess(null);
-    const amount = amountPaise();
+    setOfflineNote('');
     if (!causeId) {
       setError('Choose a cause');
       return;
     }
-    if (amount == null) {
+    if (amountPaise() == null) {
       setError('Enter at least ₹1');
       return;
     }
-    setBusy(true);
-    try {
-      const orderRes = await fetch('/api/donations/create-order', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          causeId,
-          amountPaise: amount,
-          message,
-        }),
-      });
-      const order = await orderRes.json().catch(() => ({}));
-      if (!orderRes.ok) {
-        setError(order.error || 'Could not start payment');
-        return;
-      }
-
-      const checkout = await openRazorpayCheckout({
-        orderId: order.orderId,
-        amount: order.amount,
-        currency: order.currency || 'INR',
-        keyId: order.keyId,
-        name: order.name,
-        email: order.email,
-        contact: order.contact,
-        description: order.description || 'Donation',
-      });
-
-      if (!checkout) {
-        setError('Payment cancelled');
-        return;
-      }
-      if ('failed' in checkout) {
-        setError(checkout.message || 'Payment failed');
-        return;
-      }
-
-      const verifyRes = await fetch('/api/donations/verify', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          donationId: order.donationId,
-          razorpay_order_id: checkout.razorpay_order_id,
-          razorpay_payment_id: checkout.razorpay_payment_id,
-          razorpay_signature: checkout.razorpay_signature,
-        }),
-      });
-      const verified = await verifyRes.json().catch(() => ({}));
-      if (!verifyRes.ok) {
-        setError(verified.error || 'Could not confirm payment');
-        return;
-      }
-
-      setSuccess({
-        amount_paise: verified.amount_paise || amount,
-        causeTitle: selectedCause?.title || 'Donation',
-        paymentId: checkout.razorpay_payment_id,
-      });
-    } catch {
-      setError('Payment failed. Please try again.');
-    } finally {
-      setBusy(false);
+    if (!bankAccount) {
+      setError('Bank details are not configured yet. Contact the committee.');
+      return;
     }
+    setOfflineOpen(true);
   }
 
   return (
@@ -179,8 +118,8 @@ export default function MemberDonatePage() {
               {formatInrFromPaise(success.amount_paise)} toward{' '}
               <span className="text-primary font-semibold">{success.causeTitle}</span>.
             </p>
-            <p className="text-body-sm text-on-surface-variant mt-2 break-all">
-              Reference: {success.paymentId}
+            <p className="text-body-sm text-on-surface-variant mt-2">
+              Proof submitted. The committee will confirm once the remittance is verified.
             </p>
             <div className="flex flex-wrap gap-3 mt-6">
               <button
@@ -200,7 +139,7 @@ export default function MemberDonatePage() {
           </section>
         ) : (
           <form
-            onSubmit={onPay}
+            onSubmit={openBankPay}
             className="rounded-2xl border border-outline-variant bg-white p-5 sm:p-7 max-w-xl space-y-5"
           >
             <div>
@@ -228,7 +167,6 @@ export default function MemberDonatePage() {
                           className="mt-1 accent-primary"
                           checked={causeId === c.id}
                           onChange={() => setCauseId(c.id)}
-                          disabled={busy}
                         />
                         <span className="min-w-0">
                           <span className="block text-body-md text-primary font-semibold">
@@ -254,7 +192,6 @@ export default function MemberDonatePage() {
                   <button
                     key={paise}
                     type="button"
-                    disabled={busy}
                     onClick={() => {
                       setUseCustom(false);
                       setChipPaise(paise);
@@ -270,7 +207,6 @@ export default function MemberDonatePage() {
                 ))}
                 <button
                   type="button"
-                  disabled={busy}
                   onClick={() => setUseCustom(true)}
                   className={`rounded-full px-4 py-2 text-label-sm font-bold ${
                     useCustom ? 'bg-primary text-on-primary' : 'bg-surface-container text-primary'
@@ -289,7 +225,6 @@ export default function MemberDonatePage() {
                     inputMode="numeric"
                     value={customRupees}
                     onChange={(e) => setCustomRupees(e.target.value)}
-                    disabled={busy}
                     placeholder="Amount in ₹"
                     className="w-full px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary"
                   />
@@ -306,7 +241,6 @@ export default function MemberDonatePage() {
                 maxLength={DONATION_MAX_MESSAGE}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                disabled={busy}
                 className="mt-1 w-full px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface resize-y focus:outline-none focus:border-primary"
                 placeholder="A short note with your gift"
               />
@@ -332,30 +266,16 @@ export default function MemberDonatePage() {
             <div className="flex flex-col gap-2">
               <button
                 type="submit"
-                disabled={busy || !causes?.length || amountPaise() == null}
+                disabled={!causes?.length || amountPaise() == null || !bankAccount}
                 className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50"
               >
-                {busy ? 'Opening payment…' : 'Pay with Razorpay'}
+                Bank / UPI transfer
               </button>
-              {bankAccount ? (
-                <button
-                  type="button"
-                  disabled={busy || !causes?.length || amountPaise() == null}
-                  onClick={() => {
-                    setError('');
-                    setOfflineNote('');
-                    setOfflineOpen(true);
-                  }}
-                  className="w-full rounded-lg border border-outline-variant bg-white text-primary px-4 py-3 text-label-sm font-bold uppercase tracking-wider disabled:opacity-50"
-                >
-                  Bank / UPI transfer
-                </button>
-              ) : null}
             </div>
             <p className="text-body-sm text-on-surface-variant text-center">
               {bankAccount
-                ? 'Razorpay for instant pay · Bank / UPI for NEFT or scan-and-pay (committee verifies)'
-                : 'Secure checkout via Razorpay · UPI and cards'}
+                ? 'Transfer via NEFT or UPI, then upload your proof. The committee verifies payment.'
+                : 'Bank details are not available yet. Contact the committee.'}
             </p>
             {offlineNote ? (
               <p className="rounded-lg bg-secondary-container text-on-secondary-fixed text-body-sm p-3">
@@ -372,7 +292,14 @@ export default function MemberDonatePage() {
             amountPaise={amountPaise()!}
             note={selectedCause?.title || 'Donation'}
             source={{ type: 'donation', causeId, message }}
-            onSubmitted={(msg) => setOfflineNote(msg)}
+            onSubmitted={(msg) => {
+              setOfflineNote(msg);
+              setSuccess({
+                amount_paise: amountPaise()!,
+                causeTitle: selectedCause?.title || 'Donation',
+              });
+              setOfflineOpen(false);
+            }}
           />
         ) : null}
       </MemberGate>

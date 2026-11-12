@@ -125,8 +125,8 @@ export default function AdminDonationsPage() {
   return (
     <AdminShell title="Donations">
       <p className="text-body-sm text-on-surface-variant mb-6 max-w-3xl">
-        Set up <strong>donation types</strong> (what members can give to), then track gifts that
-        come in through Razorpay.
+        Set up <strong>donation types</strong> (what members can give to), then track gifts submitted
+        via Bank / UPI proof.
       </p>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
@@ -299,7 +299,7 @@ export default function AdminDonationsPage() {
                   {d.message ? <p className="mt-1 text-on-surface">{d.message}</p> : null}
                   <p className="text-on-surface-variant mt-2 text-label-sm">
                     {new Date(d.created_at).toLocaleString('en-IN')}
-                    {d.razorpay_payment_id ? ` · ${d.razorpay_payment_id}` : ''}
+                    {d.razorpay_payment_id ? ` · ref ${d.razorpay_payment_id}` : ''}
                   </p>
                 </li>
               ))}

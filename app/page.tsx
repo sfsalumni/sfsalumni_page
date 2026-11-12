@@ -187,16 +187,10 @@ export default async function HomePage() {
             </div>
           </div>
 
-          <div className="pt-8 mt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="pt-8 mt-2">
             <p className="text-body-sm text-on-surface-variant text-center sm:text-left">
               Copyright © 2026 St. Francis de Sales&apos; High School. All Rights Reserved.
             </p>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-jubilee-amber" />
-              <span className="text-label-sm uppercase tracking-widest text-primary font-bold">
-                Celebrating 50 Years of Excellence (1976–2026)
-              </span>
-            </div>
           </div>
         </div>
       </footer>

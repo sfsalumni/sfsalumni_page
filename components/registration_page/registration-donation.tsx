@@ -14,8 +14,6 @@ import {
     type RegistrationMoney,
 } from '@/lib/registration/types';
 
-export type PaymentRoute = 'portal' | 'bank';
-
 const INPUT_CLASS =
     'px-4 py-3 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50';
 
@@ -27,8 +25,6 @@ export interface DonationSectionProps {
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
-    paymentRoute: PaymentRoute;
-    setPaymentRoute: (route: PaymentRoute) => void;
     bankAccount: BankAccountPublic | null;
     /** Ensures the registration is saved; returns registration id or an error message. */
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
@@ -44,8 +40,6 @@ export function DonationSection({
     displayMoney,
     formDirty,
     donationLocked,
-    paymentRoute,
-    setPaymentRoute,
     bankAccount,
     onPrepareOfflinePay,
     savedBankReference,
@@ -119,32 +113,10 @@ export function DonationSection({
             )}
 
             <div className="space-y-3">
-                <p className="text-label-md text-primary uppercase tracking-wider">How would you like to pay?</p>
-                <label className="flex items-center gap-3">
-                    <input
-                        type="radio"
-                        name="payment_route"
-                        checked={paymentRoute === 'portal'}
-                        onChange={() => setPaymentRoute('portal')}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                    />
-                    <span className="text-body-sm text-on-surface">Pay through this portal</span>
-                </label>
-                <label className="flex items-center gap-3">
-                    <input
-                        type="radio"
-                        name="payment_route"
-                        checked={paymentRoute === 'bank'}
-                        onChange={() => setPaymentRoute('bank')}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                    />
-                    <span className="text-body-sm text-on-surface">
-                        Bank / UPI transfer (recommended for remittances from abroad)
-                    </span>
-                </label>
-            </div>
-
-            {paymentRoute === 'bank' && (
+                <p className="text-label-md text-primary uppercase tracking-wider">Payment</p>
+                <p className="text-body-sm text-on-surface-variant">
+                    Pay by Bank / UPI transfer. The committee marks you paid after verifying the remittance.
+                </p>
                 <BankTransferSection
                     amountDuePaise={displayMoney.totalDuePaise}
                     formDirty={formDirty}
@@ -155,7 +127,7 @@ export function DonationSection({
                     savedBankReference={savedBankReference}
                     onOfflineSubmitted={onOfflineSubmitted}
                 />
-            )}
+            </div>
         </section>
     );
 }

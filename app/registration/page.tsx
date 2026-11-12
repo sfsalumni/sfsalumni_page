@@ -3,8 +3,7 @@
 // Name, email and phone come from the signed-in alumni account (alumni_accounts), not from this form.
 // When the committee has verified a registration, the server reports committee_confirmed and the
 // page shows the confirmed state with the registration code, and no payment is asked for.
-// Bank / UPI proof is submitted via OfflinePayModal (UTR and/or screenshot). Pay saves the form first, then pays.
-// On reopen, a saved bank reference restores the bank-transfer route so the user lands where they left off.
+// Bank / UPI proof is submitted via OfflinePayModal (UTR and/or screenshot).
 // Parking: a yes/no plus 2-wheeler and 4-wheeler counts. Total vehicles may not exceed guests + 1.
 
 'use client';
@@ -30,7 +29,6 @@ import {
     type RegistrationPrefill,
     type RegistrationProfileSnapshot,
 } from '@/lib/events/existing-registration';
-import { openRazorpayCheckout } from '@/lib/payments/checkout-client';
 import {
     AdminNoticeScreen,
     ChooseEventScreen,
@@ -44,13 +42,7 @@ import {
     type RegistrationFormMode,
 } from '@/components/registration_page/registration-form';
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
-import type { PaymentRoute } from '@/components/registration_page/registration-donation';
 import { previewMoney } from '@/lib/registration/preview';
-import {
-    toCheckoutOrder,
-    type OrderApiResponse,
-    type VerifyResponse,
-} from '@/lib/registration/payment-types';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     choicesFingerprint,
@@ -191,9 +183,7 @@ function RegistrationPageInner() {
     const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
     /** Fingerprint of the choices as last saved. Differs from the form when edits are unsaved. */
     const [savedFingerprint, setSavedFingerprint] = useState('');
-    const [paymentRoute, setPaymentRoute] = useState<PaymentRoute>('portal');
     const [saving, setSaving] = useState(false);
-    const [paying, setPaying] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const [event, setEvent] = useState<EventCatalog | null>(null);
     const [choices, setChoices] = useState<EventCatalog[]>([]);
@@ -389,9 +379,6 @@ function RegistrationPageInner() {
             const nextForm = formFromPrefill(prefill);
             setFormData(nextForm);
             setSavedFingerprint(choicesFingerprint(nextForm));
-            if (bankReference) {
-                setPaymentRoute('bank');
-            }
         }
 
         // Confirmed by the committee, or fully paid: the success screen with the code.
@@ -503,7 +490,7 @@ function RegistrationPageInner() {
      */
     async function saveRegistration(e?: FormEvent): Promise<LoadedRegistration | null> {
         e?.preventDefault();
-        if (!user || saving || paying || !event) return null;
+        if (!user || saving || !event) return null;
 
         setSaving(true);
         setError('');
@@ -572,113 +559,9 @@ function RegistrationPageInner() {
         }
     }
 
-    /** Pays the saved registration's total (fee plus donation) in one Razorpay order. */
-    async function payDue(regId: string) {
-        if (!user || paying || !event?.id || !accountContact) return;
-        const eventId = event.id;
-
-        setError('');
-        setSaveMessage('');
-        setPaying(true);
-
-        try {
-            const orderRes = await fetch('/api/payments/create-order', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ registrationId: regId }),
-            });
-            const orderPayload = (await orderRes.json().catch(() => ({}))) as OrderApiResponse & {
-                skipCheckout?: boolean;
-            };
-
-            if (orderRes.status === 503 || orderPayload.configured === false) {
-                setError(
-                    orderPayload.error ||
-                        'Payments are not configured yet. Your registration is already saved. The committee can mark payment, or try again after Razorpay keys are added.'
-                );
-                setPaying(false);
-                return;
-            }
-
-            if (!orderRes.ok) {
-                setError(orderPayload.error || 'Could not start payment. Your registration is still saved.');
-                setPaying(false);
-                return;
-            }
-
-            // Nothing owed online: the server settled it, so reload the saved amounts.
-            if (orderPayload.skipCheckout) {
-                await loadSavedRegistration(eventId, false);
-                setPaying(false);
-                return;
-            }
-
-            const checkoutOrder = toCheckoutOrder(orderPayload, {
-                name: accountContact.full_name,
-                email: accountContact.email,
-                contact: normalizePhoneNumber(accountContact.phone_number) || accountContact.phone_number,
-            });
-            if (!checkoutOrder) {
-                setError('Payment could not be started. Your registration is still saved.');
-                setPaying(false);
-                return;
-            }
-
-            const checkoutResult = await openRazorpayCheckout(checkoutOrder);
-
-            if (!checkoutResult) {
-                setError('Payment cancelled. Your registration is saved. Tap Pay to try again.');
-                setPaying(false);
-                return;
-            }
-
-            if ('failed' in checkoutResult) {
-                setError(`${checkoutResult.message} Your registration is still saved.`);
-                setPaying(false);
-                return;
-            }
-
-            const verifyRes = await fetch('/api/payments/verify', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                    registrationId: regId,
-                    razorpay_order_id: checkoutResult.razorpay_order_id,
-                    razorpay_payment_id: checkoutResult.razorpay_payment_id,
-                    razorpay_signature: checkoutResult.razorpay_signature,
-                }),
-            });
-            const verifyPayload = (await verifyRes.json().catch(() => ({}))) as VerifyResponse;
-            if (!verifyRes.ok) {
-                setError(
-                    (verifyPayload.error || 'Payment could not be verified') + ' Your registration is still saved.'
-                );
-                setPaying(false);
-                return;
-            }
-
-            const after = await loadSavedRegistration(eventId, false);
-            if (after && after.money.totalDuePaise > 0) {
-                setSaveMessage(`Payment received. ${formatCostForDisplay(after.money.totalDuePaise)} still due.`);
-            }
-            setPaying(false);
-        } catch {
-            setError('Payment failed. Your registration is still saved. Tap Pay to try again.');
-            setPaying(false);
-        }
-    }
-
-    /** Pay button: save the form first, then pay what the saved registration says is due. */
-    async function payNow() {
-        const loaded = await saveRegistration();
-        if (!loaded) return;
-        if (loaded.committeeConfirmed) return;
-        if (loaded.money.totalDuePaise > 0) await payDue(loaded.id);
-    }
-
-    /** Success screen button: same as Pay. */
+    /** Saves party-size edits from the success screen (no online checkout). */
     async function savePartySize() {
-        await payNow();
+        await saveRegistration();
     }
 
     /** Saves the form if needed, then returns the registration id for the offline pay modal. */
@@ -697,7 +580,6 @@ function RegistrationPageInner() {
         setSaveMessage(message);
         setError('');
         setSavedBankReference('Pending committee review');
-        setPaymentRoute('bank');
     }
 
     function acceptPreRegistration(match: PreRegistrationData) {
@@ -722,7 +604,7 @@ function RegistrationPageInner() {
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
-    const busy = saving || paying;
+    const busy = saving;
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
             ? 'pay'
@@ -769,13 +651,10 @@ function RegistrationPageInner() {
                 hasSavedReg={hasSavedReg}
                 busy={busy}
                 saving={saving}
-                paying={paying}
                 money={money}
                 displayMoney={displayMoney}
                 formDirty={formDirty}
                 donationLocked={donationLocked}
-                paymentRoute={paymentRoute}
-                setPaymentRoute={setPaymentRoute}
                 bankAccount={bankAccount}
                 onPrepareOfflinePay={prepareOfflinePay}
                 savedBankReference={savedBankReference}
@@ -785,7 +664,6 @@ function RegistrationPageInner() {
                 onSubmit={(e) => {
                     void saveRegistration(e);
                 }}
-                onPayNow={() => void payNow()}
             />
         );
     }
