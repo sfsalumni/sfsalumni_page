@@ -17,6 +17,7 @@ const LINKS: { href: string; label: string; icon: string; match?: 'exact' | 'pre
   { href: '/admin/memories', label: 'Memories', icon: 'photo_library', match: 'prefix' },
   { href: '/admin/stories', label: 'Stories', icon: 'menu_book', match: 'prefix' },
   { href: '/admin/committee', label: 'Committee', icon: 'groups', match: 'prefix' },
+  { href: '/admin/welcome', label: 'Welcome', icon: 'format_quote', match: 'prefix' },
   { href: '/admin/donations', label: 'Donate setup', icon: 'volunteer_activism', match: 'prefix' },
   { href: '/admin/payment-accounts', label: 'Bank / UPI', icon: 'account_balance', match: 'prefix' },
   { href: '/admin/import', label: 'Import', icon: 'upload_file', match: 'prefix' },
