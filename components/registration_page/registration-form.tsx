@@ -28,7 +28,6 @@ import {
 } from '@/lib/registration/registration';
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
-import { useInrExchangeRate, type DisplayCurrency } from '@/lib/registration/currency';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     BATCH_OPTIONS,
@@ -199,9 +198,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
         onSubmit,
         onPayNow,
     } = props;
-
-    const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('INR');
-    const exchange = useInrExchangeRate(displayCurrency);
 
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
@@ -546,8 +542,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             onPrepareOfflinePay={onPrepareOfflinePay}
                             savedBankReference={savedBankReference}
                             onOfflineSubmitted={onOfflineSubmitted}
-                            displayCurrency={displayCurrency}
-                            exchange={exchange}
                         />
 
                         <PaymentSummary
@@ -556,9 +550,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             refundEmail={event?.refund_email}
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}
-                            displayCurrency={displayCurrency}
-                            onCurrencyChange={setDisplayCurrency}
-                            exchange={exchange}
                         />
 
                         {saveMessage && !error && (

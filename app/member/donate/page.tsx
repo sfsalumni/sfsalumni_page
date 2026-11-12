@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import MemberGate from '@/components/member-gate';
+import AmountWithFx from '@/components/amount-with-fx';
 import OfflinePayModal from '@/components/offline-pay-modal';
 import PortalShell from '@/components/portal-shell';
 import {
@@ -316,6 +317,16 @@ export default function MemberDonatePage() {
 
             {error ? (
               <p className="rounded-lg bg-error-container text-error text-body-sm p-3">{error}</p>
+            ) : null}
+
+            {amountPaise() != null ? (
+              <div className="rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3">
+                <p className="text-label-sm uppercase tracking-wider text-primary mb-2">You pay</p>
+                <AmountWithFx
+                  paise={amountPaise()!}
+                  primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
+                />
+              </div>
             ) : null}
 
             <div className="flex flex-col gap-2">

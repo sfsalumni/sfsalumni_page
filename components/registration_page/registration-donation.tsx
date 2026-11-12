@@ -1,9 +1,8 @@
 // Donation choice and payment route. Bank / UPI opens OfflinePayModal after the registration is saved.
 
 import { useState, type Dispatch, type SetStateAction } from 'react';
+import AmountWithFx from '@/components/amount-with-fx';
 import OfflinePayModal from '@/components/offline-pay-modal';
-import { formatCostForDisplay } from '@/lib/registration/registration';
-import { approximateInCurrency, type DisplayCurrency, type ExchangeRateState } from '@/lib/registration/currency';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     DONATION_MAX_RUPEES,
@@ -35,8 +34,6 @@ export interface DonationSectionProps {
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     savedBankReference: string;
     onOfflineSubmitted: (message: string, utr?: string) => void;
-    displayCurrency: DisplayCurrency;
-    exchange: ExchangeRateState;
 }
 
 export function DonationSection({
@@ -53,8 +50,6 @@ export function DonationSection({
     onPrepareOfflinePay,
     savedBankReference,
     onOfflineSubmitted,
-    displayCurrency,
-    exchange,
 }: DonationSectionProps) {
     const validationError = donationValidationError(formData);
 
@@ -159,8 +154,6 @@ export function DonationSection({
                     onPrepareOfflinePay={onPrepareOfflinePay}
                     savedBankReference={savedBankReference}
                     onOfflineSubmitted={onOfflineSubmitted}
-                    displayCurrency={displayCurrency}
-                    exchange={exchange}
                 />
             )}
         </section>
@@ -176,8 +169,6 @@ interface BankTransferSectionProps {
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     savedBankReference: string;
     onOfflineSubmitted: (message: string, utr?: string) => void;
-    displayCurrency: DisplayCurrency;
-    exchange: ExchangeRateState;
 }
 
 function BankTransferSection({
@@ -189,15 +180,11 @@ function BankTransferSection({
     onPrepareOfflinePay,
     savedBankReference,
     onOfflineSubmitted,
-    displayCurrency,
-    exchange,
 }: BankTransferSectionProps) {
     const [open, setOpen] = useState(false);
     const [registrationId, setRegistrationId] = useState('');
     const [preparing, setPreparing] = useState(false);
     const [error, setError] = useState('');
-
-    const approxDue = approximateInCurrency(amountDuePaise, displayCurrency, exchange);
 
     async function openPayModal() {
         if (preparing || busy) return;
@@ -223,17 +210,15 @@ function BankTransferSection({
 
     return (
         <div className="rounded-lg border border-outline-variant p-5 space-y-4">
-            <div className="text-body-sm text-on-surface">
-                <p>
-                    Amount to pay:{' '}
-                    <span className="font-semibold tabular-nums">{formatCostForDisplay(amountDuePaise)}</span> (INR)
-                    {formDirty ? ' · preview, saved when you open bank / UPI details' : ''}.
+            <div className="space-y-2">
+                <p className="text-body-sm text-on-surface">
+                    Amount to pay
+                    {formDirty ? ' · preview, saved when you open bank / UPI details' : ''}:
                 </p>
-                {approxDue && (
-                    <p className="text-on-surface-variant">
-                        ≈ {approxDue} {displayCurrency} at the approximate reference rate. Your bank applies its own rate.
-                    </p>
-                )}
+                <AmountWithFx
+                    paise={amountDuePaise}
+                    primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
+                />
             </div>
 
             {savedBankReference ? (

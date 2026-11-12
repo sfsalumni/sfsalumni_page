@@ -1,9 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
+import AmountWithFx from '@/components/amount-with-fx';
 import {
   buildUpiPayUri,
-  formatInr,
   type BankAccountPublic,
 } from '@/lib/payments/bank-details';
 
@@ -176,9 +176,14 @@ export default function OfflinePayModal({
               Bank / UPI transfer
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
-              Pay {formatInr(amountPaise)} to <strong>{account.label}</strong>, then submit
-              proof.
+              Pay the amount below to <strong>{account.label}</strong>, then submit proof.
             </p>
+            <div className="mt-2">
+              <AmountWithFx
+                paise={amountPaise}
+                primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
+              />
+            </div>
           </div>
           <button
             ref={closeRef}
