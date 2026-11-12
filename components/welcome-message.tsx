@@ -54,22 +54,11 @@ export default function WelcomeMessage({ message }: { message: PublicWelcome }) 
             className={`${hasPhoto ? 'lg:col-span-7' : ''} p-8 lg:p-12 flex flex-col justify-between`}
           >
             <div>
-              {message.theme ? (
-                <div className="flex items-center gap-2 mb-3 text-jubilee-gold-deep">
-                  <span className="material-symbols-outlined text-[20px]" aria-hidden>
-                    format_quote
-                  </span>
-                  <span className="text-label-md uppercase tracking-widest font-bold">
-                    Theme: &ldquo;{message.theme}&rdquo;
-                  </span>
-                </div>
-              ) : (
-                <div className="mb-3">
-                  <span className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep">
-                    {message.leadership_label}
-                  </span>
-                </div>
-              )}
+              <div className="mb-3">
+                <span className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep">
+                  {message.leadership_label}
+                </span>
+              </div>
 
               <h2 className="text-headline-lg text-primary mb-4 leading-tight">
                 {message.headline}

@@ -37,6 +37,7 @@ Run in SQL Editor, **filename order**:
 31. `20261112120000_payment_accounts_offline_proof.sql`
 32. `20261112130000_offline_payment_proofs.sql`
 33. `20261112200000_welcome_message.sql`
+34. `20261113010000_association_about.sql`
 
 ## 2. Data — `02_data/`
 
