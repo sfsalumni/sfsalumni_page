@@ -3,18 +3,31 @@
 // (see lib/admin/registration-ledger.ts). Filters run on the full list, so search finds every match.
 
 import { NextResponse } from 'next/server';
+import {
+    displayBankReference,
+    indexProofsByRegistration,
+    type OfflineProofLite,
+} from '@/lib/admin/registration-proof';
 import { ledgerFor, loadRegistrationRows, one, refreshRegistrations, type RegistrationDbRow } from '@/lib/admin/registration-rows';
 import { STATE_LABELS, type RegistrationState } from '@/lib/admin/registration-ledger';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
+import { signedProofUrl } from '@/lib/payments/proof-storage';
 import { clampGuestCount, clampGuestsEating } from '@/lib/registration/registration';
 import { venuePassSummary } from '@/lib/events/venue-pass';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 const VALID_STATES: RegistrationState[] = ['cancelled', 'confirmed', 'awaiting_verification', 'partial', 'unpaid'];
 
-function toAdminRow(r: RegistrationDbRow) {
+type ProofAttach = { utr: string | null; screenshot_url: string | null };
+
+function toAdminRow(r: RegistrationDbRow, proof: ProofAttach | null) {
     const account = one(r.alumni_accounts);
     const event = one(r.event_catalog);
-    const ledger = ledgerFor(r);
+    const bank_reference = displayBankReference({
+        bankReference: r.bank_reference,
+        proofUtr: proof?.utr,
+    });
+    const ledger = ledgerFor({ ...r, bank_reference });
 
     const guestCount = clampGuestCount(Number(r.number_of_guests) || 0);
     const guestsEating = clampGuestsEating(r.guests_eating, guestCount);
@@ -59,11 +72,50 @@ function toAdminRow(r: RegistrationDbRow) {
         confirmed: ledger.confirmed,
         committee_verified: ledger.committeeVerified,
         payment_status: r.payment_status,
-        bank_reference: r.bank_reference,
+        bank_reference,
+        proof_screenshot_url: proof?.screenshot_url || null,
         registration_code: r.registration_code || null,
         checked_in_at: r.checked_in_at,
         created_at: r.created_at,
     };
+}
+
+async function loadProofsByRegistrationId(
+    registrationIds: string[]
+): Promise<Map<string, ProofAttach>> {
+    const out = new Map<string, ProofAttach>();
+    if (registrationIds.length === 0) return out;
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+        .from('offline_payment_proofs')
+        .select('registration_id,utr,screenshot_path,status,created_at')
+        .in('registration_id', registrationIds);
+    if (error) {
+        console.error('admin registrations proofs', error);
+        return out;
+    }
+
+    const lite: OfflineProofLite[] = (data || [])
+        .filter((row) => typeof row.registration_id === 'string' && row.registration_id)
+        .map((row) => ({
+            registration_id: String(row.registration_id),
+            utr: typeof row.utr === 'string' ? row.utr : null,
+            screenshot_path: typeof row.screenshot_path === 'string' ? row.screenshot_path : null,
+            status: String(row.status || ''),
+            created_at: String(row.created_at || ''),
+        }));
+
+    const indexed = indexProofsByRegistration(lite);
+    await Promise.all(
+        [...indexed.entries()].map(async ([id, proof]) => {
+            out.set(id, {
+                utr: proof.utr,
+                screenshot_url: await signedProofUrl(admin, proof.screenshot_path),
+            });
+        })
+    );
+    return out;
 }
 
 export async function GET(request: Request) {
@@ -82,12 +134,14 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Could not load registrations' }, { status: 500 });
     }
 
+    const proofs = await loadProofsByRegistrationId(rows.map((r) => r.id));
+
     const stateFilter = VALID_STATES.includes(stateParam as RegistrationState)
         ? (stateParam as RegistrationState)
         : null;
 
     const list = rows
-        .map(toAdminRow)
+        .map((r) => toAdminRow(r, proofs.get(r.id) || null))
         .filter((row) => !stateFilter || row.state === stateFilter)
         .filter((row) => {
             if (!q) return true;

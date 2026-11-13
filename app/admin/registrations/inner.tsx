@@ -29,6 +29,7 @@ type Row = {
     committee_verified: boolean;
     payment_status: string;
     bank_reference: string | null;
+    proof_screenshot_url: string | null;
     registration_code: string | null;
 };
 
@@ -329,6 +330,24 @@ export default function AdminRegistrationsInner() {
                                                             <span className="text-primary font-medium">Bank ref:</span>{' '}
                                                             {r.bank_reference || '—'}
                                                         </p>
+                                                        {r.proof_screenshot_url ? (
+                                                            <div className="pt-1">
+                                                                <p className="text-primary font-medium mb-1">Payment screenshot</p>
+                                                                <a
+                                                                    href={r.proof_screenshot_url}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="inline-block"
+                                                                >
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                    <img
+                                                                        src={r.proof_screenshot_url}
+                                                                        alt={`Payment proof for ${r.full_name}`}
+                                                                        className="max-h-48 max-w-full h-auto rounded-lg border border-outline-variant object-contain bg-white"
+                                                                    />
+                                                                </a>
+                                                            </div>
+                                                        ) : null}
                                                         <p className="md:hidden">
                                                             <span className="text-primary font-medium">State:</span> {r.state_label}
                                                         </p>
@@ -345,10 +364,34 @@ export default function AdminRegistrationsInner() {
                                                 {formatCostForDisplay(r.due_paise)}
                                             </td>
                                             <td className="px-3 py-3 hidden lg:table-cell">
-                                                {r.bank_reference ? (
-                                                    <span className="block truncate text-body-sm" title={r.bank_reference}>
-                                                        {r.bank_reference}
-                                                    </span>
+                                                {r.bank_reference || r.proof_screenshot_url ? (
+                                                    <div className="space-y-1 min-w-0">
+                                                        {r.bank_reference ? (
+                                                            <span
+                                                                className="block truncate text-body-sm"
+                                                                title={r.bank_reference}
+                                                            >
+                                                                {r.bank_reference}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-on-surface-variant">—</span>
+                                                        )}
+                                                        {r.proof_screenshot_url ? (
+                                                            <a
+                                                                href={r.proof_screenshot_url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-block"
+                                                            >
+                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                <img
+                                                                    src={r.proof_screenshot_url}
+                                                                    alt=""
+                                                                    className="h-10 w-10 rounded border border-outline-variant object-cover bg-white"
+                                                                />
+                                                            </a>
+                                                        ) : null}
+                                                    </div>
                                                 ) : (
                                                     <span className="text-on-surface-variant">—</span>
                                                 )}
