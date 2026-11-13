@@ -60,6 +60,8 @@ export default function OfflinePayModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
+  const [phase, setPhase] = useState<'pay' | 'thanks'>('pay');
+  const [thanksMessage, setThanksMessage] = useState('');
   const proofLocked = existingProof?.status === 'pending';
 
   const upiUri = account.upi_id
@@ -80,18 +82,39 @@ export default function OfflinePayModal({
     setUtr(existingProof?.utr?.trim() || '');
     setFile(null);
     setError('');
+    setPhase('pay');
+    setThanksMessage('');
+  }, [open, existingProof?.utr]);
+
+  useEffect(() => {
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
-    };
-    window.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = prev;
-      window.removeEventListener('keydown', onKey);
     };
-  }, [open, busy, onClose, existingProof?.utr]);
+  }, [open, phase]);
+
+  useEffect(() => {
+    if (!open || busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (phase === 'thanks') {
+        const msg =
+          thanksMessage ||
+          'Thank you. Your payment is pending committee verification. Your QR will be generated after verification.';
+        onSubmitted?.(msg);
+        setPhase('pay');
+        setThanksMessage('');
+        onClose();
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busy, phase, thanksMessage, onSubmitted, onClose]);
 
   useEffect(() => {
     if (!open || !upiUri) {
@@ -121,6 +144,16 @@ export default function OfflinePayModal({
   // Portal to document.body so this form is never nested inside the registration <form>
   // (nested forms make "Submit for verification" save the page form instead of posting proof).
   if (!open || !mounted) return null;
+
+  function finishThanks() {
+    const msg =
+      thanksMessage ||
+      'Thank you. Your payment is pending committee verification. Your QR will be generated after verification.';
+    onSubmitted?.(msg);
+    setPhase('pay');
+    setThanksMessage('');
+    onClose();
+  }
 
   async function onCopy(label: string, value: string) {
     const ok = await copyText(value);
@@ -160,13 +193,12 @@ export default function OfflinePayModal({
         setError(payload.error || 'Could not submit');
         return;
       }
-      onSubmitted?.(
-        payload.message ||
-          'Submitted for committee verification. You will be confirmed once reviewed.'
-      );
       setUtr('');
       setFile(null);
-      onClose();
+      setThanksMessage(
+        'Thank you for your payment. The committee will verify the remittance. Your QR will be generated after verification.'
+      );
+      setPhase('thanks');
     } catch {
       setError('Could not submit. Try again.');
     } finally {
@@ -191,7 +223,9 @@ export default function OfflinePayModal({
       className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4"
       role="presentation"
       onClick={() => {
-        if (!busy) onClose();
+        if (busy) return;
+        if (phase === 'thanks') finishThanks();
+        else onClose();
       }}
     >
       <div
@@ -201,150 +235,174 @@ export default function OfflinePayModal({
         className="w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-surface border border-outline-variant shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 flex items-start justify-between gap-3 bg-surface border-b border-outline-variant px-5 py-4">
-          <div>
+        {phase === 'thanks' ? (
+          <div className="px-5 py-8 space-y-5 text-center">
             <h2 id={titleId} className="text-lg font-semibold text-on-surface">
-              Bank / UPI transfer
+              Thank you
             </h2>
-            <p className="text-sm text-on-surface-variant mt-1">
-              Pay the amount below to <strong>{account.label}</strong>, then submit proof.
+            <p className="text-sm text-on-surface-variant">
+              Thank you for your payment. The committee will verify the remittance.
             </p>
-            <div className="mt-2">
-              <AmountWithFx
-                paise={amountPaise}
-                primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
-              />
-            </div>
+            <p className="text-sm text-on-surface font-medium">
+              Your QR will be generated after verification.
+            </p>
+            <button
+              ref={closeRef}
+              type="button"
+              onClick={finishThanks}
+              className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              OK
+            </button>
           </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-lg p-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="px-5 py-4 space-y-4">
-          <ul className="space-y-2">
-            {rows.map((r) => (
-              <li
-                key={r.key}
-                className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs uppercase tracking-wider text-on-surface-variant">
-                    {r.label}
-                  </p>
-                  <p className="text-sm break-all tabular-nums text-on-surface">{r.value}</p>
+        ) : (
+          <>
+            <div className="sticky top-0 flex items-start justify-between gap-3 bg-surface border-b border-outline-variant px-5 py-4">
+              <div>
+                <h2 id={titleId} className="text-lg font-semibold text-on-surface">
+                  Bank / UPI transfer
+                </h2>
+                <p className="text-sm text-on-surface-variant mt-1">
+                  Pay the amount below to <strong>{account.label}</strong>, then submit proof.
+                </p>
+                <div className="mt-2">
+                  <AmountWithFx
+                    paise={amountPaise}
+                    primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void onCopy(r.key, r.value)}
-                  className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold uppercase text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {copied === r.key ? 'Copied' : 'Copy'}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          {account.upi_id ? (
-            <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4 text-center">
-              <p className="text-xs uppercase tracking-wider mb-3 text-on-surface-variant">
-                Scan with any UPI app
-              </p>
-              {qrSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={qrSrc}
-                  alt={`UPI QR for ${account.upi_id}`}
-                  width={220}
-                  height={220}
-                  className="mx-auto rounded-lg bg-white p-2"
-                />
-              ) : (
-                <p className="text-sm text-on-surface-variant">Preparing QR…</p>
-              )}
-              <p className="text-sm text-on-surface-variant mt-2 break-all">{account.upi_id}</p>
-            </div>
-          ) : null}
-
-          <form onSubmit={onSubmit} className="space-y-3 border-t border-outline-variant pt-4">
-            {proofLocked ? (
-              <p className="rounded-lg bg-surface-container-low px-4 py-3 text-sm text-on-surface" role="status">
-                Proof already submitted and pending committee review.
-                {existingProof?.utr?.trim()
-                  ? ` UTR / reference: ${existingProof.utr.trim()}.`
-                  : ''}
-                {existingProof?.hasScreenshot ? ' Screenshot is on file.' : ''} You cannot submit
-                another reference until this one is reviewed.
-              </p>
-            ) : (
-              <p className="text-sm text-on-surface-variant">
-                After paying, enter the UTR / bank reference so the committee can verify. A screenshot
-                is optional.
-              </p>
-            )}
-            <label className="block">
-              <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                UTR / reference *
-              </span>
-              <input
-                value={utr}
-                onChange={(e) => setUtr(e.target.value)}
-                disabled={busy || proofLocked}
-                readOnly={proofLocked}
-                required={!proofLocked}
-                aria-required={!proofLocked}
-                className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
-                placeholder="Bank / UPI reference number"
-              />
-            </label>
-            {!proofLocked ? (
-              <label className="block">
-                <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                  Screenshot (optional)
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={busy}
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="mt-1 block w-full text-sm text-on-surface"
-                />
-              </label>
-            ) : null}
-            {error ? (
-              <p
-                className="rounded-lg bg-red-50 text-red-700 text-sm p-3"
-                role="alert"
-              >
-                {error}
-              </p>
-            ) : null}
-            {!proofLocked ? (
+              </div>
               <button
-                type="submit"
-                disabled={busy}
-                className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {busy ? 'Submitting…' : 'Submit for verification'}
-              </button>
-            ) : (
-              <button
+                ref={closeRef}
                 type="button"
                 onClick={onClose}
-                className="w-full rounded-lg border border-outline-variant px-4 py-3 text-sm font-bold uppercase tracking-wider text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                disabled={busy}
+                className="rounded-lg p-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                aria-label="Close"
               >
-                Close
+                ×
               </button>
-            )}
-          </form>
-        </div>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <ul className="space-y-2">
+                {rows.map((r) => (
+                  <li
+                    key={r.key}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        {r.label}
+                      </p>
+                      <p className="text-sm break-all tabular-nums text-on-surface">{r.value}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void onCopy(r.key, r.value)}
+                      className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold uppercase text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      {copied === r.key ? 'Copied' : 'Copy'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              {account.upi_id ? (
+                <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4 text-center">
+                  <p className="text-xs uppercase tracking-wider mb-3 text-on-surface-variant">
+                    Scan with any UPI app
+                  </p>
+                  {qrSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={qrSrc}
+                      alt={`UPI QR for ${account.upi_id}`}
+                      width={220}
+                      height={220}
+                      className="mx-auto rounded-lg bg-white p-2"
+                    />
+                  ) : (
+                    <p className="text-sm text-on-surface-variant">Preparing QR…</p>
+                  )}
+                  <p className="text-sm text-on-surface-variant mt-2 break-all">{account.upi_id}</p>
+                </div>
+              ) : null}
+
+              <form onSubmit={onSubmit} className="space-y-3 border-t border-outline-variant pt-4">
+                {proofLocked ? (
+                  <p className="rounded-lg bg-surface-container-low px-4 py-3 text-sm text-on-surface" role="status">
+                    Proof already submitted and pending committee review.
+                    {existingProof?.utr?.trim()
+                      ? ` UTR / reference: ${existingProof.utr.trim()}.`
+                      : ''}
+                    {existingProof?.hasScreenshot ? ' Screenshot is on file.' : ''} You cannot submit
+                    another reference until this one is reviewed.
+                  </p>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">
+                    After paying, enter the UTR / bank reference so the committee can verify. A screenshot
+                    is optional.
+                  </p>
+                )}
+                <label className="block">
+                  <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                    UTR / reference *
+                  </span>
+                  <input
+                    value={utr}
+                    onChange={(e) => setUtr(e.target.value)}
+                    disabled={busy || proofLocked}
+                    readOnly={proofLocked}
+                    required={!proofLocked}
+                    aria-required={!proofLocked}
+                    className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
+                    placeholder="Bank / UPI reference number"
+                  />
+                </label>
+                {!proofLocked ? (
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                      Screenshot (optional)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={busy}
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      className="mt-1 block w-full text-sm text-on-surface"
+                    />
+                  </label>
+                ) : null}
+                {error ? (
+                  <p
+                    className="rounded-lg bg-red-50 text-red-700 text-sm p-3"
+                    role="alert"
+                  >
+                    {error}
+                  </p>
+                ) : null}
+                {!proofLocked ? (
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {busy ? 'Registering…' : 'Register'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full rounded-lg border border-outline-variant px-4 py-3 text-sm font-bold uppercase tracking-wider text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    Close
+                  </button>
+                )}
+              </form>
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body
