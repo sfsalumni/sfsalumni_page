@@ -87,6 +87,28 @@ export default function AdminDonationsPage() {
     setForm({ title: '', description: '', sort_order: '0', active: true });
   }
 
+  async function onDeleteCause(id: string, title: string) {
+    if (!window.confirm(`Delete donation type “${title}”? This cannot be undone.`)) return;
+    setBusy(true);
+    setError('');
+    setOk('');
+    try {
+      const res = await fetch(`/api/admin/donation-causes/${id}`, { method: 'DELETE' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(payload.error || 'Could not delete donation type');
+        return;
+      }
+      if (editingId === id) startCreate();
+      setOk('Donation type deleted.');
+      await loadCauses();
+    } catch {
+      setError('Could not delete donation type');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onSaveCause(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -244,13 +266,24 @@ export default function AdminDonationsPage() {
                     <p className="text-on-surface-variant line-clamp-2">{c.description}</p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => startEdit(c)}
-                  className="text-primary underline underline-offset-2 shrink-0"
-                >
-                  Edit
-                </button>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => startEdit(c)}
+                    className="text-primary underline underline-offset-2"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onDeleteCause(c.id, c.title)}
+                    className="text-error underline underline-offset-2"
+                  >
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

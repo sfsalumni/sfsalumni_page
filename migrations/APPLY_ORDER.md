@@ -39,6 +39,9 @@ Run in SQL Editor, **filename order**:
 33. `20261112200000_welcome_message.sql`
 34. `20261113010000_association_about.sql`
 35. `20261113090000_welcome_message_style.sql`
+36. `20261113100000_site_links.sql`
+37. `20261113110000_event_instagram.sql`
+38. `20261113120000_payment_accounts_deleted_at.sql`
 
 ## 2. Data — `02_data/`
 

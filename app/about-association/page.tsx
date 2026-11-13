@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import AssociationRichText from '@/components/association-rich-text';
 import CommitteeSection from '@/components/committee-section';
 import PortalShell from '@/components/portal-shell';
 import { getAssociationAbout } from '@/lib/association/load';
@@ -12,11 +13,16 @@ export default async function AssociationPage() {
       <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
         <section className="rounded-2xl bg-white border border-outline-variant p-7 md:p-9">
           <h2 className="text-headline-md text-primary">{about.purpose_heading}</h2>
-          <p className="text-body-md text-on-surface-variant mt-4 leading-relaxed">
-            {about.purpose_body}
-          </p>
+          <div className="mt-4">
+            <AssociationRichText text={about.purpose_body} />
+          </div>
           {about.purpose_note ? (
-            <p className="text-body-sm text-on-surface-variant mt-4">{about.purpose_note}</p>
+            <div className="mt-4">
+              <AssociationRichText
+                text={about.purpose_note}
+                className="text-body-sm text-on-surface-variant"
+              />
+            </div>
           ) : null}
           {ctaIsExternal ? (
             <a
@@ -41,7 +47,13 @@ export default async function AssociationPage() {
             {about.highlight_eyebrow}
           </div>
           <h2 className="text-headline-md mt-3">{about.highlight_title}</h2>
-          <p className="text-body-sm text-white/80 mt-3">{about.highlight_body}</p>
+          <div className="mt-3">
+            <AssociationRichText
+              text={about.highlight_body}
+              className="text-body-sm text-white/80"
+              markColor="#F5E6A8"
+            />
+          </div>
         </section>
       </div>
       <CommitteeSection />

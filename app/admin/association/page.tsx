@@ -1,8 +1,18 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import AdminShell from '@/components/admin-shell';
+import AssociationRichText from '@/components/association-rich-text';
 import { ASSOCIATION_ABOUT_FALLBACK } from '@/lib/association/fallback';
+import { wrapWelcomeMarkup, type WrapKind } from '@/lib/welcome/markup';
 
 type AssociationAbout = {
   eyebrow: string;
@@ -17,6 +27,8 @@ type AssociationAbout = {
   highlight_body: string;
   published: boolean;
 };
+
+type BodyField = 'purpose_body' | 'purpose_note' | 'highlight_body';
 
 const emptyForm = {
   eyebrow: ASSOCIATION_ABOUT_FALLBACK.eyebrow,
@@ -38,6 +50,9 @@ export default function AdminAssociationPage() {
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const purposeBodyRef = useRef<HTMLTextAreaElement>(null);
+  const purposeNoteRef = useRef<HTMLTextAreaElement>(null);
+  const highlightBodyRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -75,6 +90,37 @@ export default function AdminAssociationPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  function applyWrap(ref: RefObject<HTMLTextAreaElement | null>, field: BodyField, kind: WrapKind) {
+    const el = ref.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    if (start === end) return;
+    const next = wrapWelcomeMarkup(el.value, start, end, kind);
+    setForm((f) => ({ ...f, [field]: next }));
+    requestAnimationFrame(() => {
+      const openLen = kind === 'italic' ? 1 : 2;
+      el.focus();
+      el.setSelectionRange(start + openLen, end + openLen);
+    });
+  }
+
+  function insertBullet(ref: RefObject<HTMLTextAreaElement | null>, field: BodyField) {
+    const el = ref.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const value = el.value;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const prefix = value.slice(lineStart, start).trim() ? '\n- ' : '- ';
+    const next = `${value.slice(0, start)}${prefix}${value.slice(start)}`;
+    setForm((f) => ({ ...f, [field]: next }));
+    requestAnimationFrame(() => {
+      const pos = start + prefix.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -154,20 +200,38 @@ export default function AdminAssociationPage() {
             />
           </Field>
           <Field label="Purpose body" htmlFor="aa-purpose-body">
+            <MarkupToolbar
+              disabled={busy}
+              onWrap={(kind) => applyWrap(purposeBodyRef, 'purpose_body', kind)}
+              onBullet={() => insertBullet(purposeBodyRef, 'purpose_body')}
+            />
             <textarea
               id="aa-purpose-body"
+              ref={purposeBodyRef}
               required
-              rows={6}
+              rows={8}
               value={form.purpose_body}
               onChange={(e) => setForm((f) => ({ ...f, purpose_body: e.target.value }))}
-              className={`${inputClass} resize-y min-h-[8rem]`}
+              className={`${inputClass} resize-y min-h-[10rem]`}
               disabled={busy}
+              placeholder={
+                'Separate paragraphs with a blank line.\n- Bullet one\n- Bullet two\nSelect text, then Bold / Italic / Highlight.'
+              }
             />
-            <p className="text-body-sm text-on-surface-variant mt-1">{form.purpose_body.length}/8000</p>
+            <p className="text-body-sm text-on-surface-variant mt-1">
+              Blank line = new paragraph. Start a line with <code>- </code> for a bullet.{' '}
+              {form.purpose_body.length}/8000
+            </p>
           </Field>
           <Field label="Purpose note (optional)" htmlFor="aa-purpose-note">
+            <MarkupToolbar
+              disabled={busy}
+              onWrap={(kind) => applyWrap(purposeNoteRef, 'purpose_note', kind)}
+              onBullet={() => insertBullet(purposeNoteRef, 'purpose_note')}
+            />
             <textarea
               id="aa-purpose-note"
+              ref={purposeNoteRef}
               rows={3}
               value={form.purpose_note}
               onChange={(e) => setForm((f) => ({ ...f, purpose_note: e.target.value }))}
@@ -220,16 +284,29 @@ export default function AdminAssociationPage() {
             />
           </Field>
           <Field label="Highlight body" htmlFor="aa-hl-body">
+            <MarkupToolbar
+              disabled={busy}
+              onWrap={(kind) => applyWrap(highlightBodyRef, 'highlight_body', kind)}
+              onBullet={() => insertBullet(highlightBodyRef, 'highlight_body')}
+            />
             <textarea
               id="aa-hl-body"
+              ref={highlightBodyRef}
               required
-              rows={3}
+              rows={4}
               value={form.highlight_body}
               onChange={(e) => setForm((f) => ({ ...f, highlight_body: e.target.value }))}
               className={`${inputClass} resize-y`}
               disabled={busy}
             />
           </Field>
+
+          <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4">
+            <p className="text-label-sm uppercase tracking-wider text-on-surface-variant mb-3">
+              Live preview (purpose body)
+            </p>
+            <AssociationRichText text={form.purpose_body} />
+          </div>
 
           <label className="flex items-center gap-2 text-body-sm text-primary font-medium">
             <input
@@ -281,6 +358,35 @@ function Field({
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+function MarkupToolbar({
+  disabled,
+  onWrap,
+  onBullet,
+}: {
+  disabled: boolean;
+  onWrap: (kind: WrapKind) => void;
+  onBullet: () => void;
+}) {
+  const btn =
+    'rounded-md border border-outline-variant bg-white px-2.5 py-1.5 text-label-sm font-bold text-primary disabled:opacity-50';
+  return (
+    <div className="flex flex-wrap gap-2 mb-2">
+      <button type="button" className={btn} disabled={disabled} onClick={() => onWrap('bold')}>
+        Bold
+      </button>
+      <button type="button" className={btn} disabled={disabled} onClick={() => onWrap('italic')}>
+        Italic
+      </button>
+      <button type="button" className={btn} disabled={disabled} onClick={() => onWrap('mark')}>
+        Highlight
+      </button>
+      <button type="button" className={btn} disabled={disabled} onClick={onBullet}>
+        Bullet
+      </button>
     </div>
   );
 }

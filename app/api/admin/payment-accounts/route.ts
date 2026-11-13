@@ -6,18 +6,30 @@ import { createAdminClient } from '@/lib/supabase-admin';
 export const dynamic = 'force-dynamic';
 
 const SELECT =
-  'id,label,account_name,account_number,ifsc,bank_name,upi_id,active,sort_order,created_at,updated_at';
+  'id,label,account_name,account_number,ifsc,bank_name,upi_id,active,sort_order,deleted_at,created_at,updated_at';
 
 export async function GET() {
   const me = await requireVerifiedAdmin();
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from('payment_accounts')
     .select(SELECT)
     .order('sort_order', { ascending: true })
     .order('label', { ascending: true });
+
+  if (error && (error.message?.includes('deleted_at') || error.code === '42703')) {
+    const retry = await admin
+      .from('payment_accounts')
+      .select(
+        'id,label,account_name,account_number,ifsc,bank_name,upi_id,active,sort_order,created_at,updated_at'
+      )
+      .order('sort_order', { ascending: true })
+      .order('label', { ascending: true });
+    data = (retry.data || null) as typeof data;
+    error = retry.error;
+  }
 
   if (error) {
     console.error('admin payment accounts', error);

@@ -6,8 +6,10 @@ import {
   selectCatalog,
   withoutDietPrices,
   withoutFeeBatch,
+  withoutInstagramUrl,
   withoutRefundEmail,
 } from '@/lib/events/catalog-select';
+import { normalizeInstagramUrl } from '@/lib/events/instagram';
 import { missingColumn } from '@/lib/events/registration-code';
 import { normalizeRefundEmail } from '@/lib/events/refund-mailto';
 import { EVENT_SELECT } from '@/lib/events/types';
@@ -67,7 +69,16 @@ export async function POST(request: Request) {
     is_primary: Boolean(body.is_primary),
     created_by: me.id,
     updated_at: new Date().toISOString(),
-  };
+  } as Record<string, unknown>;
+
+  try {
+    row.instagram_url = normalizeInstagramUrl(body.instagram_url);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Invalid Instagram URL' },
+      { status: 400 }
+    );
+  }
 
   const admin = createAdminClient();
   if (row.is_primary) {
@@ -77,7 +88,7 @@ export async function POST(request: Request) {
   let { data, error } = await admin.from('event_catalog').insert(row).select(EVENT_SELECT).single();
   let warning: string | null = null;
   if (error && missingColumn(error)) {
-    const stripped = withoutRefundEmail(withoutFeeBatch(withoutDietPrices(row)));
+    const stripped = withoutInstagramUrl(withoutRefundEmail(withoutFeeBatch(withoutDietPrices(row))));
     const retry = await admin.from('event_catalog').insert(stripped).select(EVENT_SELECT).single();
     data = retry.data;
     error = retry.error;

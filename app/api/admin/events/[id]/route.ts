@@ -6,8 +6,10 @@ import {
   selectCatalog,
   withoutDietPrices,
   withoutFeeBatch,
+  withoutInstagramUrl,
   withoutRefundEmail,
 } from '@/lib/events/catalog-select';
+import { normalizeInstagramUrl } from '@/lib/events/instagram';
 import { missingColumn } from '@/lib/events/registration-code';
 import { normalizeRefundEmail } from '@/lib/events/refund-mailto';
 import { restoreFields, softDeleteFields } from '@/lib/events/soft-delete';
@@ -59,6 +61,16 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (body.fee_batch_to !== undefined) patch.fee_batch_to = parseOptionalBatchYear(body.fee_batch_to);
   if (body.fee_batch_paise !== undefined) patch.fee_batch_paise = parseNonNegInt(body.fee_batch_paise);
   if (body.refund_email !== undefined) patch.refund_email = normalizeRefundEmail(body.refund_email);
+  if (body.instagram_url !== undefined) {
+    try {
+      patch.instagram_url = normalizeInstagramUrl(body.instagram_url);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : 'Invalid Instagram URL' },
+        { status: 400 }
+      );
+    }
+  }
   if (body.is_primary !== undefined) patch.is_primary = Boolean(body.is_primary);
 
   if (patch.title === '' || patch.summary === '') {
@@ -80,7 +92,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (error && missingColumn(error)) {
     const retry = await admin
       .from('event_catalog')
-      .update(withoutRefundEmail(withoutFeeBatch(withoutDietPrices(patch))))
+      .update(withoutInstagramUrl(withoutRefundEmail(withoutFeeBatch(withoutDietPrices(patch)))))
       .eq('id', id)
       .select(EVENT_SELECT)
       .maybeSingle();

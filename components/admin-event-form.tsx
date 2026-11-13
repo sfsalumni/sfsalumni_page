@@ -19,6 +19,7 @@ type FormState = {
   published: boolean;
   is_primary: boolean;
   refund_email: string;
+  instagram_url: string;
 };
 
 type SaveEventResponse = {
@@ -50,6 +51,7 @@ function initialFrom(event?: EventCatalog | null): FormState {
     published: event?.published ?? false,
     is_primary: event?.is_primary ?? false,
     refund_email: event?.refund_email || '',
+    instagram_url: event?.instagram_url || '',
   };
 }
 
@@ -81,6 +83,7 @@ export default function AdminEventForm({ event }: { event?: EventCatalog | null 
       published: form.published,
       is_primary: form.is_primary,
       refund_email: form.refund_email.trim() || null,
+      instagram_url: form.instagram_url.trim() || null,
     };
 
     try {
@@ -186,6 +189,21 @@ export default function AdminEventForm({ event }: { event?: EventCatalog | null 
             <p className="text-label-sm text-on-surface-variant mt-1.5">
               Required for the clickable refund link on registration. Overpayments still show a credit notice
               even if this is blank. Set an email so alumni can mail the committee.
+            </p>
+          </div>
+          <div>
+            <label className={LABEL_CLASS} htmlFor="instagram_url">Instagram URL (optional)</label>
+            <input
+              id="instagram_url"
+              type="url"
+              className={FIELD_CLASS}
+              placeholder="https://www.instagram.com/your.handle/"
+              value={form.instagram_url}
+              onChange={(e) => setField('instagram_url', e.target.value)}
+            />
+            <p className="text-label-sm text-on-surface-variant mt-1.5">
+              Shown next to Register on the landing hero for this event only. Leave blank to hide Instagram
+              for events that do not have a page.
             </p>
           </div>
           <label className="flex items-center gap-2 text-body-sm text-primary cursor-pointer">
