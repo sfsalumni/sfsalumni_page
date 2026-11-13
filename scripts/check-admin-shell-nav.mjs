@@ -23,6 +23,7 @@ const required = [
   '/admin/registrations',
   '/admin/membership',
   '/admin/import',
+  '/admin/maintenance',
   '/admin/memories',
   '/admin/stories',
   '/admin/welcome',
