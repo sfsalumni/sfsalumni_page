@@ -107,11 +107,11 @@ export function validateBankAccountFields(input: BankAccountInput): {
 export type OfflineProofFile = { name?: string; type: string; size: number };
 
 export type OfflineProofOk = {
-  utr: string | null;
+  utr: string;
   file: { ext: string; type: string; size: number; name?: string } | null;
 };
 
-/** Throws Error with a member-facing message when invalid. */
+/** Throws Error with a member-facing message when invalid. UTR required; screenshot optional. */
 export function assertOfflineProofFields(input: {
   utr: unknown;
   file: OfflineProofFile | null | undefined;
@@ -119,8 +119,8 @@ export function assertOfflineProofFields(input: {
   const utr = String(input.utr ?? '').trim();
   const file = input.file ?? null;
 
-  if (!utr && !file) {
-    throw new Error('Add a UTR reference or a payment screenshot');
+  if (!utr) {
+    throw new Error('UTR / reference is required');
   }
 
   if (file) {
@@ -130,12 +130,12 @@ export function assertOfflineProofFields(input: {
     const ext = PROOF_MIME[file.type];
     if (!ext) throw new Error('Screenshot must be JPEG, PNG, or WebP');
     return {
-      utr: utr || null,
+      utr,
       file: { ext, type: file.type, size: file.size, name: file.name },
     };
   }
 
-  return { utr: utr || null, file: null };
+  return { utr, file: null };
 }
 
 export function toBankAccountPublic(row: {

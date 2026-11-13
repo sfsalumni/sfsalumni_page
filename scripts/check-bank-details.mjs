@@ -86,23 +86,35 @@ try {
 
 try {
   assertOfflineProofFields({ utr: '', file: null });
-  throw new Error('expected proof required');
+  throw new Error('expected utr required');
 } catch (e) {
-  if (!(e instanceof Error) || !/UTR|screenshot/i.test(e.message)) throw e;
+  if (!(e instanceof Error) || e.message !== 'UTR / reference is required') throw e;
+}
+
+try {
+  assertOfflineProofFields({
+    utr: '',
+    file: { type: 'image/png', size: 100, name: 'x.png' },
+  });
+  throw new Error('expected utr required even with screenshot');
+} catch (e) {
+  if (!(e instanceof Error) || e.message !== 'UTR / reference is required') throw e;
 }
 
 const withUtr = assertOfflineProofFields({ utr: '  ABC123  ', file: null });
 if (withUtr.utr !== 'ABC123' || withUtr.file) throw new Error('utr only');
 
-const withFile = assertOfflineProofFields({
-  utr: '',
+const withBoth = assertOfflineProofFields({
+  utr: 'REF9',
   file: { type: 'image/png', size: 100, name: 'x.png' },
 });
-if (!withFile.file || withFile.file.ext !== 'png') throw new Error('file only');
+if (withBoth.utr !== 'REF9' || !withBoth.file || withBoth.file.ext !== 'png') {
+  throw new Error('utr + file');
+}
 
 try {
   assertOfflineProofFields({
-    utr: '',
+    utr: 'REF',
     file: { type: 'image/gif', size: 10, name: 'x.gif' },
   });
   throw new Error('expected mime fail');
@@ -112,7 +124,7 @@ try {
 
 try {
   assertOfflineProofFields({
-    utr: '',
+    utr: 'REF',
     file: { type: 'image/jpeg', size: 4_000_001, name: 'x.jpg' },
   });
   throw new Error('expected size fail');

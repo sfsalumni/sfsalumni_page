@@ -122,8 +122,8 @@ export default function OfflinePayModal({
       setError('A proof is already pending committee review.');
       return;
     }
-    if (!utr.trim() && !file) {
-      setError('Add a UTR reference or a payment screenshot');
+    if (!utr.trim()) {
+      setError('UTR / reference is required');
       return;
     }
     setBusy(true);
@@ -271,19 +271,21 @@ export default function OfflinePayModal({
               </p>
             ) : (
               <p className="text-sm text-on-surface-variant">
-                After paying, add a UTR / reference or a screenshot (at least one is required) so the
-                committee can verify.
+                After paying, enter the UTR / bank reference so the committee can verify. A screenshot
+                is optional.
               </p>
             )}
             <label className="block">
               <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                UTR / reference
+                UTR / reference *
               </span>
               <input
                 value={utr}
                 onChange={(e) => setUtr(e.target.value)}
                 disabled={busy || proofLocked}
                 readOnly={proofLocked}
+                required={!proofLocked}
+                aria-required={!proofLocked}
                 className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
                 placeholder="Bank / UPI reference number"
               />
@@ -291,7 +293,7 @@ export default function OfflinePayModal({
             {!proofLocked ? (
               <label className="block">
                 <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                  Screenshot
+                  Screenshot (optional)
                 </span>
                 <input
                   type="file"
@@ -301,11 +303,6 @@ export default function OfflinePayModal({
                   className="mt-1 block w-full text-sm text-on-surface"
                 />
               </label>
-            ) : null}
-            {!proofLocked ? (
-              <p className="text-xs text-on-surface-variant">
-                Required: provide at least one of UTR or screenshot before submit.
-              </p>
             ) : null}
             {error ? (
               <p
