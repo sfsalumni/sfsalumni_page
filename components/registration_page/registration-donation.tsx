@@ -1,13 +1,6 @@
-// Donation choice and payment route. Bank / UPI opens OfflinePayModal after the registration is saved.
+// Donation choice only. Bank / UPI pay lives next to Save changes on the registration form.
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
-import AmountWithFx from '@/components/amount-with-fx';
-import OfflinePayModal from '@/components/offline-pay-modal';
-import type { BankAccountPublic } from '@/lib/payments/bank-details';
-import {
-    pendingProofDisplay,
-    verificationStatusLabel,
-} from '@/lib/payments/offline-proof';
+import type { Dispatch, SetStateAction } from 'react';
 import {
     DONATION_MAX_RUPEES,
     DONATION_MIN_RUPEES,
@@ -15,7 +8,6 @@ import {
     donationValidationError,
     type DonationOption,
     type FormData,
-    type RegistrationMoney,
 } from '@/lib/registration/types';
 
 const INPUT_CLASS =
@@ -25,33 +17,16 @@ export interface DonationSectionProps {
     formData: FormData;
     setFormData: Dispatch<SetStateAction<FormData>>;
     busy: boolean;
-    money: RegistrationMoney;
-    displayMoney: RegistrationMoney;
-    formDirty: boolean;
     donationLocked: boolean;
     verificationPending: boolean;
-    bankAccount: BankAccountPublic | null;
-    /** Ensures the registration is saved; returns registration id or an error message. */
-    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
-    savedBankReference: string;
-    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
-    onOfflineSubmitted: (message: string, utr?: string) => void;
 }
 
 export function DonationSection({
     formData,
     setFormData,
     busy,
-    money,
-    displayMoney,
-    formDirty,
     donationLocked,
     verificationPending,
-    bankAccount,
-    onPrepareOfflinePay,
-    savedBankReference,
-    pendingProof,
-    onOfflineSubmitted,
 }: DonationSectionProps) {
     const validationError = donationValidationError(formData);
 
@@ -124,167 +99,6 @@ export function DonationSection({
                     {validationError}
                 </p>
             )}
-
-            <div className="space-y-3">
-                <p className="text-label-md text-primary uppercase tracking-wider">Payment</p>
-                <p className="text-body-sm text-on-surface-variant">
-                    Pay by Bank / UPI transfer. The committee marks you paid after verifying the remittance.
-                </p>
-                <BankTransferSection
-                    amountDuePaise={displayMoney.totalDuePaise}
-                    formDirty={formDirty}
-                    busy={busy}
-                    paymentStatus={money.paymentStatus}
-                    bankAccount={bankAccount}
-                    onPrepareOfflinePay={onPrepareOfflinePay}
-                    savedBankReference={savedBankReference}
-                    pendingProof={pendingProof}
-                    onOfflineSubmitted={onOfflineSubmitted}
-                />
-            </div>
         </section>
-    );
-}
-
-interface BankTransferSectionProps {
-    amountDuePaise: number;
-    formDirty: boolean;
-    busy: boolean;
-    paymentStatus: string | null;
-    bankAccount: BankAccountPublic | null;
-    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
-    savedBankReference: string;
-    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
-    onOfflineSubmitted: (message: string, utr?: string) => void;
-}
-
-function BankTransferSection({
-    amountDuePaise,
-    formDirty,
-    busy,
-    paymentStatus,
-    bankAccount,
-    onPrepareOfflinePay,
-    savedBankReference,
-    pendingProof,
-    onOfflineSubmitted,
-}: BankTransferSectionProps) {
-    const [open, setOpen] = useState(false);
-    const [registrationId, setRegistrationId] = useState('');
-    const [preparing, setPreparing] = useState(false);
-    const [error, setError] = useState('');
-
-    async function openPayModal() {
-        if (preparing || busy) return;
-        setPreparing(true);
-        setError('');
-        const result = await onPrepareOfflinePay();
-        setPreparing(false);
-        if ('error' in result) {
-            setError(result.error);
-            return;
-        }
-        if (!bankAccount) {
-            setError('Bank details are not configured yet. Contact the committee.');
-            return;
-        }
-        setRegistrationId(result.registrationId);
-        setOpen(true);
-    }
-    if (amountDuePaise <= 0) {
-        return <p className="text-body-sm text-on-surface-variant">Nothing is due for bank transfer right now.</p>;
-    }
-
-    return (
-        <div className="rounded-lg border border-outline-variant p-5 space-y-4">
-            <div className="space-y-2">
-                <p className="text-body-sm text-on-surface">
-                    Amount to pay
-                    {formDirty ? ' · preview, saved when you open bank / UPI details' : ''}:
-                </p>
-                <AmountWithFx
-                    paise={amountDuePaise}
-                    primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
-                />
-            </div>
-
-            {pendingProof ? (
-                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
-                    {pendingProofDisplay({
-                        utr: pendingProof.utr,
-                        screenshot_path: pendingProof.hasScreenshot ? 'on-file' : null,
-                    }).label}
-                </p>
-            ) : savedBankReference ? (
-                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
-                    {savedBankReference}
-                </p>
-            ) : null}
-
-            <button
-                type="button"
-                onClick={() => void openPayModal()}
-                disabled={busy || preparing || !bankAccount}
-                className="w-full sm:w-auto px-8 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-                {preparing
-                    ? 'Preparing…'
-                    : pendingProof
-                      ? 'View Bank / UPI proof'
-                      : 'Bank / UPI transfer'}
-            </button>
-
-            {!bankAccount && (
-                <p className="text-body-sm text-on-surface-variant">
-                    Bank details are not available yet. Contact the committee.
-                </p>
-            )}
-
-            {error && (
-                <p role="alert" className="text-body-sm text-error">
-                    {error}
-                </p>
-            )}
-
-            <div className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface-variant space-y-2">
-                <p>
-                    Payments are reconciled with the bank remittance and shown as paid once confirmed. Please check back
-                    in 3–5 business days.
-                </p>
-                <p>
-                    Verification status:{' '}
-                    <span className="font-semibold text-on-surface">
-                        {verificationStatusLabel({
-                            paymentStatus,
-                            pendingProof: Boolean(pendingProof),
-                            bankReference: savedBankReference,
-                        })}
-                    </span>
-                </p>
-            </div>
-
-            {bankAccount && registrationId ? (
-                <OfflinePayModal
-                    open={open}
-                    onClose={() => setOpen(false)}
-                    account={bankAccount}
-                    amountPaise={amountDuePaise}
-                    note="Golden Jubilee registration"
-                    source={{ type: 'registration', registrationId }}
-                    existingProof={
-                        pendingProof
-                            ? {
-                                  utr: pendingProof.utr,
-                                  hasScreenshot: pendingProof.hasScreenshot,
-                                  status: 'pending',
-                              }
-                            : null
-                    }
-                    onSubmitted={(message) => {
-                        onOfflineSubmitted(message);
-                        setOpen(false);
-                    }}
-                />
-            ) : null}        </div>
     );
 }

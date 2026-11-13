@@ -7,6 +7,7 @@
 
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
 import BackHomeLink from '@/components/back-home-link';
+import OfflinePayModal from '@/components/offline-pay-modal';
 import SearchableSelect from '@/components/searchable-select';
 import { DonationSection } from '@/components/registration_page/registration-donation';
 import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
@@ -26,6 +27,7 @@ import {
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import { pendingProofDisplay, verificationStatusLabel } from '@/lib/payments/offline-proof';
 import {
     BATCH_OPTIONS,
     COUNTRY_OPTIONS,
@@ -196,6 +198,37 @@ export function RegistrationForm(props: RegistrationFormProps) {
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
     const choicesLocked = busy || verificationPending;
+    const [payOpen, setPayOpen] = useState(false);
+    const [payRegistrationId, setPayRegistrationId] = useState('');
+    const [payPreparing, setPayPreparing] = useState(false);
+    const [payError, setPayError] = useState('');
+
+    const amountDuePaise = displayMoney.totalDuePaise;
+    const canOpenPay =
+        Boolean(bankAccount) &&
+        hasSavedReg &&
+        !formDirty &&
+        !busy &&
+        !payPreparing &&
+        (Boolean(pendingProof) || amountDuePaise > 0);
+
+    async function openPayModal() {
+        if (!canOpenPay) return;
+        setPayPreparing(true);
+        setPayError('');
+        const result = await onPrepareOfflinePay();
+        setPayPreparing(false);
+        if ('error' in result) {
+            setPayError(result.error);
+            return;
+        }
+        if (!bankAccount) {
+            setPayError('Bank details are not configured yet. Contact the committee.');
+            return;
+        }
+        setPayRegistrationId(result.registrationId);
+        setPayOpen(true);
+    }
 
     // Display-only: whether the food question is shown. The fee itself comes from displayMoney.
     const guestCount = clampGuestCount(formData.number_of_guests);
@@ -528,16 +561,8 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             formData={formData}
                             setFormData={setFormData}
                             busy={busy}
-                            money={money}
-                            displayMoney={displayMoney}
-                            formDirty={formDirty}
                             donationLocked={donationLocked || verificationPending}
                             verificationPending={verificationPending}
-                            bankAccount={bankAccount}
-                            onPrepareOfflinePay={onPrepareOfflinePay}
-                            savedBankReference={savedBankReference}
-                            pendingProof={pendingProof}
-                            onOfflineSubmitted={onOfflineSubmitted}
                         />
 
                         <PaymentSummary
@@ -547,6 +572,26 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}
                         />
+
+                        {pendingProof ? (
+                            <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                                {pendingProofDisplay({
+                                    utr: pendingProof.utr,
+                                    screenshot_path: pendingProof.hasScreenshot ? 'on-file' : null,
+                                }).label}
+                            </p>
+                        ) : null}
+
+                        <p className="text-body-sm text-on-surface-variant">
+                            Verification status:{' '}
+                            <span className="font-semibold text-on-surface">
+                                {verificationStatusLabel({
+                                    paymentStatus: money.paymentStatus,
+                                    pendingProof: Boolean(pendingProof),
+                                    bankReference: savedBankReference,
+                                })}
+                            </span>
+                        </p>
 
                         {saveMessage && !error && (
                             <div role="status" className="p-3 rounded-lg border border-jubilee-gold-light bg-secondary-container/30 text-body-sm text-on-secondary-fixed-variant">
@@ -558,6 +603,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             <div role="alert" className="p-3 rounded-lg bg-error-container text-error text-body-sm">
                                 {error}
                             </div>
+                        )}
+
+                        {payError && (
+                            <p role="alert" className="text-body-sm text-error">
+                                {payError}
+                            </p>
                         )}
 
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -574,8 +625,61 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         ? 'Save changes'
                                         : 'Save registration'}
                             </button>
+                            {(amountDuePaise > 0 || pendingProof) && (
+                                <button
+                                    type="button"
+                                    onClick={() => void openPayModal()}
+                                    disabled={!canOpenPay}
+                                    className="flex-1 py-3 rounded-lg border border-primary/30 bg-surface text-primary text-label-md uppercase tracking-wider font-bold hover:bg-surface-container-low disabled:bg-surface-container disabled:text-on-surface-variant disabled:border-outline-variant transition-all focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                >
+                                    {payPreparing
+                                        ? 'Preparing…'
+                                        : pendingProof
+                                          ? 'View Bank / UPI proof'
+                                          : 'Bank / UPI transfer'}
+                                </button>
+                            )}
                         </div>
+                        {!bankAccount && (amountDuePaise > 0 || pendingProof) ? (
+                            <p className="text-body-sm text-on-surface-variant">
+                                Bank details are not available yet. Contact the committee.
+                            </p>
+                        ) : null}
+                        {bankAccount && formDirty && (amountDuePaise > 0 || pendingProof) ? (
+                            <p className="text-body-sm text-on-surface-variant">
+                                Save changes before paying by Bank / UPI.
+                            </p>
+                        ) : null}
+                        {bankAccount && !hasSavedReg && amountDuePaise > 0 ? (
+                            <p className="text-body-sm text-on-surface-variant">
+                                Save registration before paying by Bank / UPI.
+                            </p>
+                        ) : null}
                     </form>
+
+                    {bankAccount && payRegistrationId ? (
+                        <OfflinePayModal
+                            open={payOpen}
+                            onClose={() => setPayOpen(false)}
+                            account={bankAccount}
+                            amountPaise={amountDuePaise}
+                            note="Golden Jubilee registration"
+                            source={{ type: 'registration', registrationId: payRegistrationId }}
+                            existingProof={
+                                pendingProof
+                                    ? {
+                                          utr: pendingProof.utr,
+                                          hasScreenshot: pendingProof.hasScreenshot,
+                                          status: 'pending',
+                                      }
+                                    : null
+                            }
+                            onSubmitted={(message) => {
+                                onOfflineSubmitted(message);
+                                setPayOpen(false);
+                            }}
+                        />
+                    ) : null}
 
                     <div className="text-center mt-6">
                         <BackHomeLink signedIn />
