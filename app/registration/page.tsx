@@ -52,7 +52,6 @@ import {
     donationValidationError,
     EMPTY_FORM,
     EMPTY_MONEY,
-    firstRowOf,
     moneyFromRegistration,
     parsePreRegistrationRow,
     type AuthProfile,
@@ -175,6 +174,7 @@ function RegistrationPageInner() {
     const [currentStep, setCurrentStep] = useState<RegistrationStep>('phone');
     const [error, setError] = useState('');
     const [preRegData, setPreRegData] = useState<PreRegistrationData | null>(null);
+    const [preRegCandidates, setPreRegCandidates] = useState<PreRegistrationData[]>([]);
     /** Name, email and phone from the alumni account. Never typed on this form. */
     const [accountContact, setAccountContact] = useState<AccountContact | null>(null);
     const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
@@ -245,47 +245,76 @@ function RegistrationPageInner() {
         void loadEvent();
     }, [searchParams]);
 
-    async function prefillFromPreRegistration(phoneNumber: string, email: string) {
-        if (!phoneNumber || !email) return;
+    function applyRosterPrefill(match: PreRegistrationData) {
+        const loc = parseLocation(match.current_location || '');
+        const hasParking = match.has_parking === true;
+        setFormData((prev) => ({
+            ...prev,
+            batch: match.batch ?? prev.batch,
+            section: match.section || prev.section,
+            city: loc.city || prev.city,
+            country: loc.country || prev.country,
+            food_preference: match.food_preference ?? prev.food_preference,
+            number_of_guests:
+                typeof match.number_of_guests === 'number' ? match.number_of_guests : prev.number_of_guests,
+            guests_eating:
+                typeof match.guests_eating === 'number' ? match.guests_eating : prev.guests_eating,
+            attending: typeof match.attending === 'boolean' ? match.attending : prev.attending,
+            has_parking: typeof match.has_parking === 'boolean' ? hasParking : prev.has_parking,
+            two_wheeler_count: hasParking
+                ? typeof match.two_wheeler_count === 'number'
+                    ? match.two_wheeler_count
+                    : prev.two_wheeler_count
+                : 0,
+            four_wheeler_count: hasParking
+                ? typeof match.four_wheeler_count === 'number'
+                    ? match.four_wheeler_count
+                    : prev.four_wheeler_count
+                : 0,
+        }));
+        setPreRegData(match);
+        setPreRegCandidates([]);
+        setCurrentStep('details');
+    }
 
+    async function prefillFromMemberRoster(
+        phoneNumber: string,
+        email: string,
+        fullName?: string
+    ): Promise<RegistrationStep> {
         try {
-            const normalized = normalizePhoneNumber(phoneNumber);
-            if (!normalized) return;
+            const params = new URLSearchParams();
+            if (phoneNumber) params.set('phone', phoneNumber);
+            if (email) params.set('email', email);
+            if (fullName) params.set('name', fullName);
+            if (![...params.keys()].length) return 'details';
 
-            const { data, error: rpcError } = await supabase.rpc('find_pre_registration', {
-                input_phone: normalized,
-                input_email: email,
+            const res = await fetch(`/api/registration/roster-lookup?${params.toString()}`, {
+                cache: 'no-store',
             });
+            if (!res.ok) return 'details';
 
-            if (rpcError) {
-                console.error('Prefill lookup error:', rpcError);
-                return;
+            const payload = (await res.json().catch(() => ({}))) as {
+                kind?: string;
+                auto?: boolean;
+                matches?: unknown[];
+            };
+            const matches = (payload.matches || [])
+                .map((row) => parsePreRegistrationRow(row))
+                .filter((row): row is PreRegistrationData => row != null);
+            if (!matches.length) return 'details';
+
+            if (payload.auto || (payload.kind === 'exact' && matches.length === 1)) {
+                applyRosterPrefill(matches[0]);
+                return 'details';
             }
 
-            const match = parsePreRegistrationRow(firstRowOf(data));
-            if (!match) return;
-
-            // Phone-only match: ask for confirmation first.
-            if (match.match_type === 'phone_only') {
-                setPreRegData(match);
-                setCurrentStep('confirm_prefill');
-                return;
-            }
-
-            // Exact match: auto-prefill the fields this form still asks for.
-            const loc = parseLocation(match.current_location || '');
-            setFormData((prev) => ({
-                ...prev,
-                batch: match.batch || prev.batch,
-                section: match.section || prev.section,
-                city: loc.city || prev.city,
-                country: loc.country || prev.country,
-                food_preference: match.food_preference ?? prev.food_preference,
-            }));
-            setPreRegData(match);
-            setCurrentStep('details');
+            setPreRegData(matches[0]);
+            setPreRegCandidates(matches);
+            return 'confirm_prefill';
         } catch (err) {
             console.error('Prefill error:', err);
+            return 'details';
         }
     }
 
@@ -325,8 +354,12 @@ function RegistrationPageInner() {
                     country: loc.country,
                 }));
 
-                await prefillFromPreRegistration(contact.phone_number, contact.email);
-                setCurrentStep('details');
+                const rosterStep = await prefillFromMemberRoster(
+                    contact.phone_number,
+                    contact.email,
+                    contact.full_name
+                );
+                setCurrentStep(rosterStep);
             } catch {
                 setCurrentStep('phone');
             } finally {
@@ -622,20 +655,12 @@ function RegistrationPageInner() {
     }
 
     function acceptPreRegistration(match: PreRegistrationData) {
-        const loc = parseLocation(match.current_location || '');
-        setFormData((prev) => ({
-            ...prev,
-            batch: match.batch,
-            section: match.section || '',
-            city: loc.city,
-            country: loc.country,
-            food_preference: match.food_preference ?? 'veg',
-        }));
-        setCurrentStep('details');
+        applyRosterPrefill(match);
     }
 
     function dismissPreRegistration() {
         setPreRegData(null);
+        setPreRegCandidates([]);
         setCurrentStep('details');
     }
 
@@ -674,7 +699,8 @@ function RegistrationPageInner() {
         return (
             <ConfirmPrefillScreen
                 preRegData={preRegData}
-                onAccept={() => acceptPreRegistration(preRegData)}
+                candidates={preRegCandidates}
+                onAccept={acceptPreRegistration}
                 onReject={dismissPreRegistration}
             />
         );

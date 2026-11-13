@@ -151,55 +151,95 @@ export function SignInScreen({ event }: SignInScreenProps) {
 
 export interface ConfirmPrefillScreenProps {
     preRegData: PreRegistrationData;
-    onAccept: () => void;
+    /** When several roster rows match, show a pick list. */
+    candidates?: PreRegistrationData[];
+    onAccept: (match: PreRegistrationData) => void;
     onReject: () => void;
 }
 
-export function ConfirmPrefillScreen({ preRegData, onAccept, onReject }: ConfirmPrefillScreenProps) {
+function matchHint(matchType: PreRegistrationData['match_type']): string {
+    if (matchType === 'phone_only') return 'Matched on phone; email differed or was missing.';
+    if (matchType === 'email_only') return 'Matched on email; phone differed or was missing.';
+    if (matchType === 'name') return 'Matched on name — confirm the right person.';
+    return 'We found a possible match in the member list.';
+}
+
+export function ConfirmPrefillScreen({
+    preRegData,
+    candidates,
+    onAccept,
+    onReject,
+}: ConfirmPrefillScreenProps) {
+    const list = candidates && candidates.length > 1 ? candidates : [preRegData];
+    const multi = list.length > 1;
+
     return (
         <div className="min-h-screen bg-surface flex items-center justify-center px-6 pt-20 pb-12">
             <div className="w-full max-w-3xl">
                 <div className="bg-surface-paper rounded-2xl shadow-lg p-8 border border-surface-container-low">
-                    <h1 className="text-headline-lg text-primary mb-2">We found your information</h1>
+                    <h1 className="text-headline-lg text-primary mb-2">
+                        {multi ? 'Which record is yours?' : 'We found your information'}
+                    </h1>
                     <p className="text-body-md text-on-surface-variant mb-8">
-                        We found a match for your phone number, but with a different email. Is this your information?
+                        {multi
+                            ? 'Several people matched. Pick yours, or continue without prefilling.'
+                            : matchHint(preRegData.match_type)}
                     </p>
 
-                    <div className="bg-surface-container-low rounded-lg p-6 mb-6 space-y-3">
-                        <div className="flex justify-between">
-                            <span className="text-label-md text-on-surface-variant">Name:</span>
-                            <span className="text-body-md text-primary font-semibold">
-                                {preRegData.full_name}
-                            </span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-label-md text-on-surface-variant">Email:</span>
-                            <span className="text-body-md text-primary">{preRegData.email}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-label-md text-on-surface-variant">Batch:</span>
-                            <span className="text-body-md text-primary">{preRegData.batch || 'Not specified'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                            <span className="text-label-md text-on-surface-variant">Section:</span>
-                            <span className="text-body-md text-primary">{preRegData.section || 'Not specified'}</span>
-                        </div>
+                    <div className="space-y-3 mb-6">
+                        {list.map((match) => (
+                            <div
+                                key={match.id}
+                                className="bg-surface-container-low rounded-lg p-5 space-y-2"
+                            >
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-label-md text-on-surface-variant">Name</span>
+                                    <span className="text-body-md text-primary font-semibold text-right">
+                                        {match.full_name}
+                                    </span>
+                                </div>
+                                {match.email ? (
+                                    <div className="flex justify-between gap-4">
+                                        <span className="text-label-md text-on-surface-variant">Email</span>
+                                        <span className="text-body-md text-primary text-right">{match.email}</span>
+                                    </div>
+                                ) : null}
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-label-md text-on-surface-variant">Batch</span>
+                                    <span className="text-body-md text-primary">
+                                        {match.batch || 'Not specified'}
+                                        {match.section ? ` · ${match.section}` : ''}
+                                    </span>
+                                </div>
+                                {multi ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => onAccept(match)}
+                                        className="mt-3 w-full py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle transition-all"
+                                    >
+                                        This is me
+                                    </button>
+                                ) : null}
+                            </div>
+                        ))}
                     </div>
 
                     <div className="flex gap-3">
-                        <button
-                            type="button"
-                            onClick={onAccept}
-                            className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle transition-all"
-                        >
-                            Yes, this is correct
-                        </button>
+                        {!multi ? (
+                            <button
+                                type="button"
+                                onClick={() => onAccept(preRegData)}
+                                className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle transition-all"
+                            >
+                                Yes, this is correct
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             onClick={onReject}
                             className="flex-1 py-3 rounded-lg bg-surface-container text-primary text-label-md uppercase tracking-wider font-bold hover:bg-surface-container-high transition-all"
                         >
-                            No, continue anyway
+                            {multi ? 'None of these' : 'No, continue anyway'}
                         </button>
                     </div>
                 </div>

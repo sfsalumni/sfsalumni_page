@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { planAlumniImport, readAlumniSheet, toAccountRow } from '@/lib/alumni-import.mjs';
+import { readUniqueRecordsSheet } from '@/lib/member-roster-sheet.mjs';
+import { planMemberRosterImport } from '@/lib/registration/roster';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -26,9 +28,16 @@ function missingColumn(error: { code?: string; message?: string } | null): boole
   return error.code === 'PGRST204' || error.code === '42703' || /column/i.test(message);
 }
 
-async function loadAccounts(): Promise<{ email: string; username: string | null; full_name: string | null; phone_number: string | null }[]> {
+async function loadAccounts(): Promise<
+  { email: string; username: string | null; full_name: string | null; phone_number: string | null }[]
+> {
   const admin = createAdminClient();
-  const rows: { email: string; username: string | null; full_name: string | null; phone_number: string | null }[] = [];
+  const rows: {
+    email: string;
+    username: string | null;
+    full_name: string | null;
+    phone_number: string | null;
+  }[] = [];
   const page = 1000;
   for (let from = 0; ; from += page) {
     const full = await admin
@@ -102,16 +111,68 @@ async function insertAccounts(accounts: AccountRow[], passwordHash: string) {
   return { created, failures };
 }
 
+async function upsertRoster(buffer: Buffer) {
+  let sheet: Record<string, unknown>[];
+  try {
+    sheet = readUniqueRecordsSheet(buffer) as Record<string, unknown>[];
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not read that workbook';
+    return { ok: false as const, status: 400, error: message };
+  }
+  if (!sheet.length) {
+    return { ok: false as const, status: 400, error: 'The Unique Records sheet has no rows' };
+  }
+
+  const planned = planMemberRosterImport(sheet);
+  if (!planned.rows.length) {
+    return { ok: false as const, status: 400, error: 'No usable Record ID rows found' };
+  }
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const chunkSize = 100;
+  let upserted = 0;
+  for (let i = 0; i < planned.rows.length; i += chunkSize) {
+    const chunk = planned.rows.slice(i, i + chunkSize).map((row) => ({
+      ...row,
+      updated_at: now,
+    }));
+    const { error } = await admin.from('member_roster').upsert(chunk, { onConflict: 'record_id' });
+    if (error) {
+      console.error('member_roster upsert', error);
+      const missing =
+        error.code === 'PGRST205' ||
+        /member_roster/i.test(error.message || '') ||
+        /schema cache/i.test(error.message || '');
+      return {
+        ok: false as const,
+        status: missing ? 503 : 500,
+        error: missing
+          ? 'member_roster is not set up yet. Run migration 20261113140000_member_roster.sql in Supabase.'
+          : 'Could not save the member roster',
+      };
+    }
+    upserted += chunk.length;
+  }
+
+  return {
+    ok: true as const,
+    upserted,
+    skipped: planned.skipped,
+    total: sheet.length,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const me = await requireVerifiedAdmin();
     if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const form = await request.formData();
+    const kind = String(form.get('kind') || 'accounts').toLowerCase();
     const file = form.get('file');
-    const password = String(form.get('password') || '');
     if (!(file instanceof File) || file.size === 0) {
-      return NextResponse.json({ error: 'Choose the alumni workbook' }, { status: 400 });
+      return NextResponse.json({ error: 'Choose the workbook' }, { status: 400 });
     }
     if (!file.name.toLowerCase().endsWith('.xlsx')) {
       return NextResponse.json({ error: 'Upload the .xlsx workbook' }, { status: 400 });
@@ -119,6 +180,23 @@ export async function POST(request: Request) {
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: 'That workbook is too large' }, { status: 400 });
     }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    if (kind === 'roster') {
+      const result = await upsertRoster(buffer);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: result.status });
+      }
+      return NextResponse.json({
+        kind: 'roster',
+        upserted: result.upserted,
+        skipped: result.skipped,
+        total: result.total,
+      });
+    }
+
+    const password = String(form.get('password') || '');
     if (password.length < 8) {
       return NextResponse.json(
         { error: 'Password for new accounts must be at least 8 characters' },
@@ -128,7 +206,7 @@ export async function POST(request: Request) {
 
     let sheet;
     try {
-      sheet = readAlumniSheet(Buffer.from(await file.arrayBuffer()));
+      sheet = readAlumniSheet(buffer);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not read that workbook';
       return NextResponse.json({ error: message }, { status: 400 });
@@ -161,7 +239,7 @@ export async function POST(request: Request) {
       line.status === 'create' && failedEmails.has(line.email) ? { ...line, status: 'failed' } : line
     );
 
-    return NextResponse.json({ created, failed: failures.length, lines });
+    return NextResponse.json({ kind: 'accounts', created, failed: failures.length, lines });
   } catch (err) {
     console.error('admin import', err);
     return NextResponse.json({ error: 'Could not import the workbook' }, { status: 500 });

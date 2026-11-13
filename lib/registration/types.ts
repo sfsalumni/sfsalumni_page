@@ -11,20 +11,31 @@ export { isSeniorSponsoredBatch } from '@/lib/registration/registration';
 
 export type RegistrationStep = 'phone' | 'confirm_prefill' | 'details' | 'review' | 'success';
 
+export type PrefillMatchType = 'exact' | 'phone_only' | 'email_only' | 'name';
+
 export interface PreRegistrationData {
     id: string;
     phone_number: string;
     email: string;
     full_name: string;
+    given_name?: string;
     last_name?: string;
     batch?: number;
     section?: string;
     current_location?: string;
     food_preference?: FoodPreference;
-    match_type: 'exact' | 'phone_only';
+    number_of_guests?: number;
+    guests_eating?: number;
+    has_parking?: boolean;
+    two_wheeler_count?: number;
+    four_wheeler_count?: number;
+    attending?: boolean;
+    match_type: PrefillMatchType;
 }
 
-/** Validates an untyped RPC row. Returns null when required fields are missing. */
+const PREFILL_MATCH_TYPES = new Set<PrefillMatchType>(['exact', 'phone_only', 'email_only', 'name']);
+
+/** Validates an untyped roster/RPC row. Returns null when required fields are missing. */
 export function parsePreRegistrationRow(value: unknown): PreRegistrationData | null {
     if (typeof value !== 'object' || value === null) return null;
     const row = value as Record<string, unknown>;
@@ -36,19 +47,34 @@ export function parsePreRegistrationRow(value: unknown): PreRegistrationData | n
     ) {
         return null;
     }
-    if (row.match_type !== 'exact' && row.match_type !== 'phone_only') return null;
+    if (typeof row.match_type !== 'string' || !PREFILL_MATCH_TYPES.has(row.match_type as PrefillMatchType)) {
+        return null;
+    }
     return {
         id: row.id,
         phone_number: row.phone_number,
         email: row.email,
         full_name: row.full_name,
+        given_name: typeof row.given_name === 'string' ? row.given_name : undefined,
         last_name: typeof row.last_name === 'string' ? row.last_name : undefined,
         batch: typeof row.batch === 'number' ? row.batch : undefined,
         section: typeof row.section === 'string' ? row.section : undefined,
         current_location: typeof row.current_location === 'string' ? row.current_location : undefined,
         food_preference:
             row.food_preference === undefined ? undefined : normalizeFoodPreference(row.food_preference),
-        match_type: row.match_type,
+        number_of_guests:
+            typeof row.number_of_guests === 'number' ? Math.max(0, Math.floor(row.number_of_guests)) : undefined,
+        guests_eating:
+            typeof row.guests_eating === 'number' ? Math.max(0, Math.floor(row.guests_eating)) : undefined,
+        has_parking: typeof row.has_parking === 'boolean' ? row.has_parking : undefined,
+        two_wheeler_count:
+            typeof row.two_wheeler_count === 'number' ? Math.max(0, Math.floor(row.two_wheeler_count)) : undefined,
+        four_wheeler_count:
+            typeof row.four_wheeler_count === 'number'
+                ? Math.max(0, Math.floor(row.four_wheeler_count))
+                : undefined,
+        attending: typeof row.attending === 'boolean' ? row.attending : undefined,
+        match_type: row.match_type as PrefillMatchType,
     };
 }
 

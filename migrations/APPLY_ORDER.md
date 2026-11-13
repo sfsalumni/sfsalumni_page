@@ -42,6 +42,7 @@ Run in SQL Editor, **filename order**:
 36. `20261113100000_site_links.sql`
 37. `20261113110000_event_instagram.sql`
 38. `20261113120000_payment_accounts_deleted_at.sql`
+39. `20261113140000_member_roster.sql`
 
 ## 2. Data — `02_data/`
 
