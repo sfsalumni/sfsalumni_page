@@ -11,6 +11,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 const SELECT =
+  'id,leadership_label,person_name,person_title,theme,headline,body,quote,signature_name,signature_role,cta_label,cta_href,photo_path,published,style,created_at,updated_at';
+const SELECT_LEGACY =
   'id,leadership_label,person_name,person_title,theme,headline,body,quote,signature_name,signature_role,cta_label,cta_href,photo_path,published,created_at,updated_at';
 
 async function rowWithUrl(
@@ -29,11 +31,19 @@ export async function GET() {
     if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const admin = createAdminClient();
-    const { data, error } = await admin
+    let { data, error } = await admin
       .from('welcome_message')
       .select(SELECT)
       .eq('id', 'default')
       .maybeSingle();
+
+    if (error && /style/i.test(error.message || '')) {
+      ({ data, error } = await admin
+        .from('welcome_message')
+        .select(SELECT_LEGACY)
+        .eq('id', 'default')
+        .maybeSingle());
+    }
 
     if (error) {
       console.error('admin welcome get', error);
@@ -68,6 +78,7 @@ export async function POST(request: Request) {
 
     if (isMultipart) {
       const form = await request.formData();
+      const styleRaw = form.get('style');
       fieldsInput = {
         leadership_label: form.get('leadership_label'),
         person_name: form.get('person_name'),
@@ -81,6 +92,7 @@ export async function POST(request: Request) {
         cta_label: form.get('cta_label'),
         cta_href: form.get('cta_href'),
         published: form.get('published'),
+        style: typeof styleRaw === 'string' ? styleRaw : undefined,
       };
       clearPhoto = form.get('clear_photo') === 'true' || form.get('clear_photo') === '1';
       const file = form.get('photo');
@@ -149,13 +161,29 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await admin
+    let { data, error } = await admin
       .from('welcome_message')
       .upsert(payload, { onConflict: 'id' })
       .select(SELECT)
       .single();
 
-    if (error) {
+    if (error && /style/i.test(error.message || '')) {
+      const { style: _style, ...withoutStyle } = payload as typeof payload & { style?: unknown };
+      void _style;
+      ({ data, error } = await admin
+        .from('welcome_message')
+        .upsert(withoutStyle, { onConflict: 'id' })
+        .select(SELECT_LEGACY)
+        .single());
+      if (!error && data) {
+        return NextResponse.json({
+          message: await rowWithUrl(admin, data),
+          warning: 'Saved without style. Run the welcome_message_style migration to enable typography.',
+        });
+      }
+    }
+
+    if (error || !data) {
       console.error('admin welcome save', error);
       return NextResponse.json(
         { error: 'Could not save. Run the welcome_message migration if this is new.' },

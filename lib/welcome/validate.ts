@@ -1,3 +1,5 @@
+import { assertWelcomeStyle, type WelcomeStyle } from './style.ts';
+
 const MAX_LABEL = 80;
 const MAX_NAME = 120;
 const MAX_TITLE = 120;
@@ -35,6 +37,7 @@ export type WelcomeFields = {
   cta_label: string;
   cta_href: string;
   published: boolean;
+  style: WelcomeStyle;
 };
 
 function trimOrEmpty(value: unknown): string {
@@ -62,6 +65,7 @@ export function assertWelcomeFields(input: {
   cta_label?: unknown;
   cta_href?: unknown;
   published?: unknown;
+  style?: unknown;
 }): WelcomeFields {
   const leadership_label =
     optionalText(input.leadership_label, MAX_LABEL, 'Leadership label') || DEFAULT_LEADERSHIP;
@@ -120,6 +124,8 @@ export function assertWelcomeFields(input: {
     publishedRaw === '1' ||
     publishedRaw === 1;
 
+  const style = assertWelcomeStyle(input.style);
+
   return {
     leadership_label,
     person_name,
@@ -133,6 +139,7 @@ export function assertWelcomeFields(input: {
     cta_label,
     cta_href,
     published,
+    style,
   };
 }
 

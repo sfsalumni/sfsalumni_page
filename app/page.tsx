@@ -2,6 +2,9 @@ import Hero from '@/components/hero';
 import WelcomeMessage from '@/components/welcome-message';
 import { getPublishedWelcome } from '@/lib/welcome/load';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const galleryItems = [
   {
     id: 1,

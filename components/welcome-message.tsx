@@ -1,5 +1,12 @@
 import Link from 'next/link';
+import WelcomeRichText from '@/components/welcome-rich-text';
 import { splitWelcomeBody } from '@/lib/welcome/validate';
+import {
+  resolveWelcomeStyle,
+  welcomeBodyClass,
+  welcomeFontClass,
+  welcomeHeadlineClass,
+} from '@/lib/welcome/style';
 import type { PublicWelcome } from '@/lib/welcome/load';
 
 export default function WelcomeMessage({ message }: { message: PublicWelcome }) {
@@ -7,9 +14,13 @@ export default function WelcomeMessage({ message }: { message: PublicWelcome }) 
   const hasPhoto = Boolean(message.photo_url);
   const ctaIsHash = message.cta_href.startsWith('#');
   const ctaIsExternal = /^https?:\/\//i.test(message.cta_href);
+  const resolved = resolveWelcomeStyle(message.style);
+  const fontClass = welcomeFontClass(resolved.fontFamily);
+  const headlineClass = welcomeHeadlineClass(resolved.size);
+  const bodyClass = welcomeBodyClass(resolved.size);
 
   const ctaClass =
-    'inline-flex items-center gap-1.5 text-label-md uppercase tracking-wider text-primary hover:text-jubilee-gold-deep transition-colors';
+    'inline-flex items-center gap-1.5 text-label-md uppercase tracking-wider hover:opacity-80 transition-opacity';
 
   const ctaInner = (
     <>
@@ -51,73 +62,92 @@ export default function WelcomeMessage({ message }: { message: PublicWelcome }) 
           ) : null}
 
           <div
-            className={`${hasPhoto ? 'lg:col-span-7' : ''} p-8 lg:p-12 flex flex-col justify-between`}
+            className={`${hasPhoto ? 'lg:col-span-7' : ''} p-8 lg:p-12 flex flex-col justify-between ${fontClass}`}
           >
             <div>
               <div className="mb-3">
-                <span className="text-label-sm uppercase tracking-widest text-jubilee-gold-deep">
+                <span
+                  className="text-label-sm uppercase tracking-widest"
+                  style={{ color: resolved.accentColor }}
+                >
                   {message.leadership_label}
                 </span>
               </div>
 
-              <h2 className="text-headline-lg text-primary mb-4 leading-tight">
+              <h2
+                className={`${headlineClass} mb-4 leading-tight`}
+                style={{ color: resolved.headlineColor }}
+              >
                 {message.headline}
               </h2>
 
               {!hasPhoto ? (
-                <p className="text-body-sm text-on-surface-variant mb-4">
+                <p className={`${bodyClass} mb-4`} style={{ color: resolved.bodyColor }}>
                   {message.person_name}
-                  <span className="text-on-surface-variant/70"> · {message.person_title}</span>
+                  <span className="opacity-70"> · {message.person_title}</span>
                 </p>
               ) : null}
 
               {paragraphs.map((p, i) => (
                 <p
                   key={i}
-                  className="text-body-md text-on-surface-variant mb-4 last:mb-6 leading-relaxed"
+                  className={`${bodyClass} mb-4 last:mb-6 leading-relaxed`}
+                  style={{ color: resolved.bodyColor }}
                 >
-                  {p}
+                  <WelcomeRichText text={p} markColor={resolved.accentColor} />
                 </p>
               ))}
 
               {message.quote ? (
-                <blockquote className="p-4 rounded-lg bg-surface-container-low text-primary text-headline-sm italic mb-6">
-                  &ldquo;{message.quote}&rdquo;
+                <blockquote
+                  className={`p-4 rounded-lg bg-surface-container-low ${headlineClass} italic mb-6`}
+                  style={{ color: resolved.headlineColor }}
+                >
+                  &ldquo;
+                  <WelcomeRichText text={message.quote} markColor={resolved.accentColor} />
+                  &rdquo;
                 </blockquote>
               ) : null}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-surface-container">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-secondary-container/30 flex items-center justify-center text-jubilee-gold-deep">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: `${resolved.accentColor}33`, color: resolved.accentColor }}
+                >
                   <span className="material-symbols-outlined text-[22px]" aria-hidden>
                     verified
                   </span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-label-md text-primary uppercase">
+                  <span
+                    className="text-label-md uppercase"
+                    style={{ color: resolved.headlineColor }}
+                  >
                     {message.signature_name}
                   </span>
-                  <span className="text-label-sm text-on-surface-variant">
+                  <span className="text-label-sm" style={{ color: resolved.bodyColor }}>
                     {message.signature_role}
                   </span>
                 </div>
               </div>
               {ctaIsHash ? (
-                <a href={message.cta_href} className={ctaClass}>
+                <a href={message.cta_href} className={ctaClass} style={{ color: resolved.headlineColor }}>
                   {ctaInner}
                 </a>
               ) : ctaIsExternal ? (
                 <a
                   href={message.cta_href}
                   className={ctaClass}
+                  style={{ color: resolved.headlineColor }}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
                   {ctaInner}
                 </a>
               ) : (
-                <Link href={message.cta_href} className={ctaClass}>
+                <Link href={message.cta_href} className={ctaClass} style={{ color: resolved.headlineColor }}>
                   {ctaInner}
                 </Link>
               )}

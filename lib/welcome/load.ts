@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import { WELCOME_BUCKET, welcomePhotoUrl } from '@/lib/welcome/sign';
+import { assertWelcomeStyle, type WelcomeStyle } from '@/lib/welcome/style';
 
 export type PublicWelcome = {
   leadership_label: string;
@@ -14,22 +15,40 @@ export type PublicWelcome = {
   cta_label: string;
   cta_href: string;
   photo_url: string | null;
+  style: WelcomeStyle;
 };
 
 const SELECT =
+  'leadership_label,person_name,person_title,theme,headline,body,quote,signature_name,signature_role,cta_label,cta_href,photo_path,published,style';
+const SELECT_LEGACY =
   'leadership_label,person_name,person_title,theme,headline,body,quote,signature_name,signature_role,cta_label,cta_href,photo_path,published';
 
 /** Published welcome for the homepage, or null if draft / missing. */
 export async function getPublishedWelcome(): Promise<PublicWelcome | null> {
   try {
     const admin = createAdminClient();
-    const { data, error } = await admin
+    let { data, error } = await admin
       .from('welcome_message')
       .select(SELECT)
       .eq('id', 'default')
       .maybeSingle();
 
+    if (error && /style/i.test(error.message || '')) {
+      ({ data, error } = await admin
+        .from('welcome_message')
+        .select(SELECT_LEGACY)
+        .eq('id', 'default')
+        .maybeSingle());
+    }
+
     if (error || !data || !data.published) return null;
+
+    let style: WelcomeStyle;
+    try {
+      style = assertWelcomeStyle((data as { style?: unknown }).style);
+    } catch {
+      style = assertWelcomeStyle(undefined);
+    }
 
     return {
       leadership_label: data.leadership_label,
@@ -48,6 +67,7 @@ export async function getPublishedWelcome(): Promise<PublicWelcome | null> {
           admin.storage.from(WELCOME_BUCKET).getPublicUrl(data.photo_path).data.publicUrl ||
           null
         : null,
+      style,
     };
   } catch {
     return null;

@@ -53,6 +53,9 @@ if (ok.quote !== 'Courage counts.') throw new Error('bad quote trim');
 if (ok.cta_label !== 'Reconnect with SFS') throw new Error('bad cta default');
 if (ok.cta_href !== '#gallery-section') throw new Error('bad cta href default');
 if (!ok.published) throw new Error('bad published');
+if (!ok.style || ok.style.theme !== 'default' || ok.style.font !== 'sans' || ok.style.size !== 'm') {
+  throw new Error('bad default style');
+}
 
 const paras = splitWelcomeBody(ok.body);
 if (paras.length !== 2 || paras[0] !== 'Para one.' || paras[1] !== 'Para two.') {
