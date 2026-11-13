@@ -44,6 +44,7 @@ import {
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
 import { previewMoney } from '@/lib/registration/preview';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import { pendingProofDisplay } from '@/lib/payments/offline-proof';
 import {
     choicesFingerprint,
     donationFormFromPaise,
@@ -62,12 +63,15 @@ import {
     type RegistrationUser,
 } from '@/lib/registration/types';
 
+type PendingProofState = { utr: string | null; hasScreenshot: boolean };
+
 /** A saved registration as the server reports it right now. */
 interface LoadedRegistration {
     id: string;
     money: RegistrationMoney;
     committeeConfirmed: boolean;
     bankReference: string;
+    pendingProof: PendingProofState | null;
 }
 
 function formFromPrefill(prefill: RegistrationPrefill): FormData {
@@ -180,6 +184,7 @@ function RegistrationPageInner() {
     const [registrationId, setRegistrationId] = useState<string | null>(null);
     /** Bank / UPI reference as last submitted for verification. */
     const [savedBankReference, setSavedBankReference] = useState('');
+    const [pendingProof, setPendingProof] = useState<PendingProofState | null>(null);
     const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
     /** Fingerprint of the choices as last saved. Differs from the form when edits are unsaved. */
     const [savedFingerprint, setSavedFingerprint] = useState('');
@@ -358,6 +363,7 @@ function RegistrationPageInner() {
             setMoney(EMPTY_MONEY);
             setCommitteeConfirmed(false);
             setSavedBankReference('');
+            setPendingProof(null);
             return null;
         }
 
@@ -365,10 +371,29 @@ function RegistrationPageInner() {
         const next = moneyFromRegistration(reg);
         const confirmed = reg.committee_confirmed === true;
         const bankReference = typeof reg.bank_reference === 'string' ? reg.bank_reference : '';
+        const rawProof = reg.pending_offline_proof;
+        const nextPending: PendingProofState | null =
+            rawProof && typeof rawProof === 'object'
+                ? {
+                      utr:
+                          typeof (rawProof as { utr?: unknown }).utr === 'string'
+                              ? ((rawProof as { utr: string }).utr)
+                              : null,
+                      hasScreenshot: Boolean((rawProof as { has_screenshot?: unknown }).has_screenshot),
+                  }
+                : null;
         setRegistrationId(id || null);
         setMoney(next);
         setCommitteeConfirmed(confirmed);
-        setSavedBankReference(bankReference);
+        setSavedBankReference(
+            nextPending
+                ? pendingProofDisplay({
+                      utr: nextPending.utr,
+                      screenshot_path: nextPending.hasScreenshot ? 'on-file' : null,
+                  }).label
+                : bankReference
+        );
+        setPendingProof(nextPending);
         setHasSavedReg(true);
 
         if (applyToForm) {
@@ -385,7 +410,13 @@ function RegistrationPageInner() {
         if (confirmed || (next.paymentStatus === 'paid' && next.totalDuePaise === 0)) {
             setCurrentStep('success');
         }
-        return { id, money: next, committeeConfirmed: confirmed, bankReference };
+        return {
+            id,
+            money: next,
+            committeeConfirmed: confirmed,
+            bankReference,
+            pendingProof: nextPending,
+        };
     }
 
     useEffect(() => {
@@ -567,6 +598,10 @@ function RegistrationPageInner() {
     /** Saves the form if needed, then returns the registration id for the offline pay modal. */
     async function prepareOfflinePay(): Promise<{ registrationId: string } | { error: string }> {
         let regId = registrationId;
+        if (pendingProof) {
+            if (!regId) return { error: 'Could not find your registration. Please try again.' };
+            return { registrationId: regId };
+        }
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
             if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
@@ -576,9 +611,13 @@ function RegistrationPageInner() {
         return { registrationId: regId };
     }
 
-    function handleOfflineSubmitted(message: string) {
+    async function handleOfflineSubmitted(message: string) {
         setSaveMessage(message);
         setError('');
+        if (event?.id) {
+            await loadSavedRegistration(event.id, false);
+            return;
+        }
         setSavedBankReference('Pending committee review');
     }
 
@@ -604,6 +643,7 @@ function RegistrationPageInner() {
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
+    const verificationPending = Boolean(pendingProof);
     const busy = saving;
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
@@ -655,10 +695,14 @@ function RegistrationPageInner() {
                 displayMoney={displayMoney}
                 formDirty={formDirty}
                 donationLocked={donationLocked}
+                verificationPending={verificationPending}
                 bankAccount={bankAccount}
                 onPrepareOfflinePay={prepareOfflinePay}
                 savedBankReference={savedBankReference}
-                onOfflineSubmitted={handleOfflineSubmitted}
+                pendingProof={pendingProof}
+                onOfflineSubmitted={(message) => {
+                    void handleOfflineSubmitted(message);
+                }}
                 saveMessage={saveMessage}
                 error={error}
                 onSubmit={(e) => {

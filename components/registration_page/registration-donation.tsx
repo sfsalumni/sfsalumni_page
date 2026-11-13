@@ -5,6 +5,10 @@ import AmountWithFx from '@/components/amount-with-fx';
 import OfflinePayModal from '@/components/offline-pay-modal';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
+    pendingProofDisplay,
+    verificationStatusLabel,
+} from '@/lib/payments/offline-proof';
+import {
     DONATION_MAX_RUPEES,
     DONATION_MIN_RUPEES,
     DONATION_OPTIONS,
@@ -25,10 +29,12 @@ export interface DonationSectionProps {
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
+    verificationPending: boolean;
     bankAccount: BankAccountPublic | null;
     /** Ensures the registration is saved; returns registration id or an error message. */
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
     onOfflineSubmitted: (message: string, utr?: string) => void;
 }
 
@@ -40,9 +46,11 @@ export function DonationSection({
     displayMoney,
     formDirty,
     donationLocked,
+    verificationPending,
     bankAccount,
     onPrepareOfflinePay,
     savedBankReference,
+    pendingProof,
     onOfflineSubmitted,
 }: DonationSectionProps) {
     const validationError = donationValidationError(formData);
@@ -66,9 +74,14 @@ export function DonationSection({
                 <p className="text-body-sm text-on-surface-variant mt-1">Additional INR donation to fund the event:</p>
             </div>
 
-            {donationLocked && (
+            {donationLocked && !verificationPending && (
                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
                     Your donation is paid. To change it, contact the committee.
+                </p>
+            )}
+            {verificationPending && (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    Donation is locked while Bank / UPI verification is pending.
                 </p>
             )}
 
@@ -125,6 +138,7 @@ export function DonationSection({
                     bankAccount={bankAccount}
                     onPrepareOfflinePay={onPrepareOfflinePay}
                     savedBankReference={savedBankReference}
+                    pendingProof={pendingProof}
                     onOfflineSubmitted={onOfflineSubmitted}
                 />
             </div>
@@ -140,6 +154,7 @@ interface BankTransferSectionProps {
     bankAccount: BankAccountPublic | null;
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
     onOfflineSubmitted: (message: string, utr?: string) => void;
 }
 
@@ -151,6 +166,7 @@ function BankTransferSection({
     bankAccount,
     onPrepareOfflinePay,
     savedBankReference,
+    pendingProof,
     onOfflineSubmitted,
 }: BankTransferSectionProps) {
     const [open, setOpen] = useState(false);
@@ -175,7 +191,6 @@ function BankTransferSection({
         setRegistrationId(result.registrationId);
         setOpen(true);
     }
-
     if (amountDuePaise <= 0) {
         return <p className="text-body-sm text-on-surface-variant">Nothing is due for bank transfer right now.</p>;
     }
@@ -193,7 +208,14 @@ function BankTransferSection({
                 />
             </div>
 
-            {savedBankReference ? (
+            {pendingProof ? (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    {pendingProofDisplay({
+                        utr: pendingProof.utr,
+                        screenshot_path: pendingProof.hasScreenshot ? 'on-file' : null,
+                    }).label}
+                </p>
+            ) : savedBankReference ? (
                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
                     {savedBankReference}
                 </p>
@@ -205,7 +227,11 @@ function BankTransferSection({
                 disabled={busy || preparing || !bankAccount}
                 className="w-full sm:w-auto px-8 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-                {preparing ? 'Preparing…' : 'Bank / UPI transfer'}
+                {preparing
+                    ? 'Preparing…'
+                    : pendingProof
+                      ? 'View Bank / UPI proof'
+                      : 'Bank / UPI transfer'}
             </button>
 
             {!bankAccount && (
@@ -226,7 +252,14 @@ function BankTransferSection({
                     in 3–5 business days.
                 </p>
                 <p>
-                    Current status: <span className="font-semibold text-on-surface">{paymentStatus || 'pending'}</span>
+                    Verification status:{' '}
+                    <span className="font-semibold text-on-surface">
+                        {verificationStatusLabel({
+                            paymentStatus,
+                            pendingProof: Boolean(pendingProof),
+                            bankReference: savedBankReference,
+                        })}
+                    </span>
                 </p>
             </div>
 
@@ -238,12 +271,20 @@ function BankTransferSection({
                     amountPaise={amountDuePaise}
                     note="Golden Jubilee registration"
                     source={{ type: 'registration', registrationId }}
+                    existingProof={
+                        pendingProof
+                            ? {
+                                  utr: pendingProof.utr,
+                                  hasScreenshot: pendingProof.hasScreenshot,
+                                  status: 'pending',
+                              }
+                            : null
+                    }
                     onSubmitted={(message) => {
                         onOfflineSubmitted(message);
                         setOpen(false);
                     }}
                 />
-            ) : null}
-        </div>
+            ) : null}        </div>
     );
 }

@@ -4,6 +4,11 @@ import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAccount } from '@/lib/auth/request';
 import { assertDonationAmountPaise, assertDonationMessage } from '@/lib/donations/validate';
+import { assertOfflineProofFields } from '@/lib/payments/bank-details';
+import {
+  PENDING_PROOF_ALREADY_MESSAGE,
+  bankReferenceFromProof,
+} from '@/lib/payments/offline-proof';
 import {
   PAYMENT_PROOFS_BUCKET,
   paymentProofObjectPath,
@@ -15,14 +20,6 @@ export const revalidate = 0;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
-
-function extForMime(type: string): string {
-  if (type === 'image/png') return 'png';
-  if (type === 'image/webp') return 'webp';
-  return 'jpg';
-}
 
 export async function POST(request: Request) {
   const me = await getCurrentAccount();
@@ -37,30 +34,28 @@ export async function POST(request: Request) {
   }
 
   const sourceType = String(form.get('sourceType') || '').trim();
-  const utr = String(form.get('utr') || '').trim() || null;
   const paymentAccountIdRaw = String(form.get('paymentAccountId') || '').trim();
   const paymentAccountId = UUID_RE.test(paymentAccountIdRaw) ? paymentAccountIdRaw : null;
   const file = form.get('screenshot');
   const blob = file instanceof File && file.size > 0 ? file : null;
 
-  if (!utr && !blob) {
+  let proofFields;
+  try {
+    proofFields = assertOfflineProofFields({
+      utr: form.get('utr'),
+      file: blob
+        ? { name: blob.name, type: blob.type, size: blob.size }
+        : null,
+    });
+  } catch (e) {
     return NextResponse.json(
-      { error: 'Add a UTR reference or a payment screenshot' },
+      { error: e instanceof Error ? e.message : 'Invalid proof' },
       { status: 400 }
     );
   }
-
-  if (blob) {
-    if (!ALLOWED_MIME.has(blob.type)) {
-      return NextResponse.json({ error: 'Screenshot must be JPEG, PNG, or WebP' }, { status: 400 });
-    }
-    if (blob.size > 4_000_000) {
-      return NextResponse.json({ error: 'Screenshot must be under 4 MB' }, { status: 400 });
-    }
-  }
+  const utr = proofFields.utr;
 
   const admin = createAdminClient();
-
   const { data: payAccount } = paymentAccountId
     ? await admin
         .from('payment_accounts')
@@ -100,6 +95,15 @@ export async function POST(request: Request) {
     amountPaise = Math.max(0, total - paid);
     if (amountPaise < 100) {
       return NextResponse.json({ error: 'Nothing due on this registration' }, { status: 400 });
+    }
+    const { data: existingProofs } = await admin
+      .from('offline_payment_proofs')
+      .select('id')
+      .eq('registration_id', registrationId)
+      .eq('status', 'pending')
+      .limit(1);
+    if (Array.isArray(existingProofs) && existingProofs.length > 0) {
+      return NextResponse.json({ error: PENDING_PROOF_ALREADY_MESSAGE }, { status: 400 });
     }
   } else if (sourceType === 'donation') {
     if (me.member_status !== 'verified') {
@@ -151,13 +155,16 @@ export async function POST(request: Request) {
   }
 
   let screenshot_path: string | null = null;
-  if (blob) {
+  if (blob && proofFields.file) {
     const objectId = randomUUID();
-    screenshot_path = paymentProofObjectPath(me.id, objectId, extForMime(blob.type));
+    screenshot_path = paymentProofObjectPath(me.id, objectId, proofFields.file.ext);
     const buffer = Buffer.from(await blob.arrayBuffer());
     const { error: uploadError } = await admin.storage
       .from(PAYMENT_PROOFS_BUCKET)
-      .upload(screenshot_path, buffer, { contentType: blob.type, upsert: false });
+      .upload(screenshot_path, buffer, {
+        contentType: proofFields.file.type,
+        upsert: false,
+      });
     if (uploadError) {
       console.error('offline proof upload', uploadError);
       if (donationId) {
@@ -181,7 +188,7 @@ export async function POST(request: Request) {
       status: 'pending',
       updated_at: new Date().toISOString(),
     })
-    .select('id,status,amount_paise,donation_id,registration_id')
+    .select('id,status,amount_paise,donation_id,registration_id,utr,screenshot_path')
     .single();
 
   if (proofErr || !proof) {
@@ -195,9 +202,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not submit proof' }, { status: 500 });
   }
 
+  if (registrationId) {
+    const bankReference = bankReferenceFromProof({
+      utr,
+      hasScreenshot: Boolean(screenshot_path),
+    });
+    const { error: refErr } = await admin
+      .from('event_registrations')
+      .update({ bank_reference: bankReference, updated_at: new Date().toISOString() })
+      .eq('id', registrationId)
+      .eq('account_id', me.id);
+    if (refErr) console.error('offline proof bank_reference', refErr);
+  }
+
   return NextResponse.json({
     ok: true,
     proof,
+    bank_reference: registrationId
+      ? bankReferenceFromProof({ utr, hasScreenshot: Boolean(screenshot_path) })
+      : null,
     message: 'Submitted for committee verification. You will be confirmed once reviewed.',
   });
 }

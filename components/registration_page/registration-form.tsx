@@ -59,10 +59,13 @@ export interface RegistrationFormProps {
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
+    /** True while a Bank / UPI proof awaits committee review — locks guest/food/donation edits. */
+    verificationPending: boolean;
     bankAccount: BankAccountPublic | null;
     onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
     /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
     onOfflineSubmitted: (message: string) => void;
     saveMessage: string;
     error: string;
@@ -179,9 +182,11 @@ export function RegistrationForm(props: RegistrationFormProps) {
         displayMoney,
         formDirty,
         donationLocked,
+        verificationPending,
         bankAccount,
         onPrepareOfflinePay,
         savedBankReference,
+        pendingProof,
         onOfflineSubmitted,
         saveMessage,
         error,
@@ -190,6 +195,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
 
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
+    const choicesLocked = busy || verificationPending;
 
     // Display-only: whether the food question is shown. The fee itself comes from displayMoney.
     const guestCount = clampGuestCount(formData.number_of_guests);
@@ -258,7 +264,9 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     </h1>
                     <p className={`text-body-sm text-on-surface-variant ${hasSavedReg ? 'mb-4' : 'mb-8'}`}>
                         {hasSavedReg
-                            ? 'Change your attendance, lunch, guests, or parking anytime. Amounts update as you edit. Use Bank / UPI below to pay what is due.'
+                            ? verificationPending
+                                ? 'Your Bank / UPI proof is pending committee review. Guest count, food choice, and donation stay locked until then.'
+                                : 'Change your attendance, lunch, guests, or parking anytime before you submit Bank / UPI proof. Amounts update as you edit.'
                             : event
                               ? `Register for ${event.title}`
                               : 'Complete your registration for the alumni meet'}
@@ -266,7 +274,13 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     {hasSavedReg && (
                         <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm text-on-secondary-fixed-variant mb-8">
                             Saved registration loaded
-                            {money.paymentStatus ? ` · status: ${money.paymentStatus}` : ''}.
+                            {money.paymentStatus ? ` · payment: ${money.paymentStatus}` : ''}
+                            {verificationPending ? ' · verification: pending' : ''}.
+                        </p>
+                    )}
+                    {verificationPending && (
+                        <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface mb-6" role="status">
+                            Proof submitted for verification. Contact the committee if you need to change guests, food, or donation.
                         </p>
                     )}
 
@@ -301,7 +315,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                                         placeholder="City"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     />
                                 </div>
@@ -314,7 +328,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         onChange={(v) => setFormData({ ...formData, country: v })}
                                         placeholder="Type to search country…"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         aria-label="Country"
                                         emptyLabel="No matching country"
                                     />
@@ -330,7 +344,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         }
                                         placeholder="Type to search batch year…"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         aria-label="Batch year"
                                         emptyLabel="No matching batch year"
                                     />
@@ -342,7 +356,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         value={formData.section}
                                         onChange={(e) => setFormData({ ...formData, section: e.target.value })}
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     >
                                         <option value="">Select section</option>
@@ -366,7 +380,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     legend="Are you going to attend?"
                                     value={formData.attending}
                                     onChange={changeAttending}
-                                    disabled={busy}
+                                    disabled={choicesLocked}
                                 />
 
                                 <div className="flex flex-col">
@@ -385,7 +399,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         value={formData.number_of_guests}
                                         onChange={(e) => changeGuestCount(e.target.value)}
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     />
                                 </div>
@@ -396,7 +410,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         legend="Will you be having lunch?"
                                         value={formData.lunch}
                                         onChange={(next) => setFormData({ ...formData, lunch: next })}
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                     />
                                 )}
 
@@ -414,7 +428,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                             step={1}
                                             value={guestsEating}
                                             onChange={(e) => changeGuestsEating(e.target.value)}
-                                            disabled={busy}
+                                            disabled={choicesLocked}
                                             className={INPUT_CLASS}
                                         />
                                     </div>
@@ -429,7 +443,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                             name="food_preference"
                                             value={normalizeFoodPreference(formData.food_preference)}
                                             onChange={(next) => setFormData({ ...formData, food_preference: next })}
-                                            disabled={busy}
+                                            disabled={choicesLocked}
                                         />
                                     </div>
                                 )}
@@ -446,7 +460,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     legend="Do you need parking?"
                                     value={formData.has_parking}
                                     onChange={changeHasParking}
-                                    disabled={busy}
+                                    disabled={choicesLocked}
                                 />
 
                                 {formData.has_parking && (
@@ -463,7 +477,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                                 step={1}
                                                 value={formData.two_wheeler_count}
                                                 onChange={(e) => changeTwoWheelerCount(e.target.value)}
-                                                disabled={busy}
+                                                disabled={choicesLocked}
                                                 className={INPUT_CLASS}
                                             />
                                         </div>
@@ -480,7 +494,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                                 step={1}
                                                 value={formData.four_wheeler_count}
                                                 onChange={(e) => changeFourWheelerCount(e.target.value)}
-                                                disabled={busy}
+                                                disabled={choicesLocked}
                                                 className={INPUT_CLASS}
                                             />
                                         </div>
@@ -517,10 +531,12 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             money={money}
                             displayMoney={displayMoney}
                             formDirty={formDirty}
-                            donationLocked={donationLocked}
+                            donationLocked={donationLocked || verificationPending}
+                            verificationPending={verificationPending}
                             bankAccount={bankAccount}
                             onPrepareOfflinePay={onPrepareOfflinePay}
                             savedBankReference={savedBankReference}
+                            pendingProof={pendingProof}
                             onOfflineSubmitted={onOfflineSubmitted}
                         />
 
@@ -547,10 +563,16 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <div className="flex flex-col sm:flex-row gap-3">
                             <button
                                 type="submit"
-                                disabled={busy}
+                                disabled={busy || verificationPending}
                                 className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
                             >
-                                {saving ? 'Saving…' : hasSavedReg ? 'Save changes' : 'Save registration'}
+                                {saving
+                                    ? 'Saving…'
+                                    : verificationPending
+                                      ? 'Locked while verification pending'
+                                      : hasSavedReg
+                                        ? 'Save changes'
+                                        : 'Save registration'}
                             </button>
                         </div>
                     </form>

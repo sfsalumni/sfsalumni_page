@@ -9,6 +9,12 @@ import {
 
 export type { BankAccountPublic };
 
+export type ExistingOfflineProof = {
+  utr: string | null;
+  hasScreenshot: boolean;
+  status: 'pending';
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -18,6 +24,8 @@ type Props = {
   source:
     | { type: 'registration'; registrationId: string }
     | { type: 'donation'; causeId: string; message?: string };
+  /** When set, proof was already submitted and cannot be replaced until reviewed. */
+  existingProof?: ExistingOfflineProof | null;
   onSubmitted?: (message: string) => void;
   submitUrl?: string;
 };
@@ -38,6 +46,7 @@ export default function OfflinePayModal({
   amountPaise,
   note,
   source,
+  existingProof = null,
   onSubmitted,
   submitUrl = '/api/payments/offline-proof',
 }: Props) {
@@ -49,6 +58,7 @@ export default function OfflinePayModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
+  const proofLocked = existingProof?.status === 'pending';
 
   const upiUri = account.upi_id
     ? buildUpiPayUri({
@@ -61,13 +71,16 @@ export default function OfflinePayModal({
 
   useEffect(() => {
     if (!open) return;
+    setUtr(existingProof?.utr?.trim() || '');
+    setFile(null);
+    setError('');
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, busy, onClose]);
+  }, [open, busy, onClose, existingProof?.utr]);
 
   useEffect(() => {
     if (!open || !upiUri) {
@@ -105,6 +118,10 @@ export default function OfflinePayModal({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    if (proofLocked) {
+      setError('A proof is already pending committee review.');
+      return;
+    }
     if (!utr.trim() && !file) {
       setError('Add a UTR reference or a payment screenshot');
       return;
@@ -243,33 +260,53 @@ export default function OfflinePayModal({
           ) : null}
 
           <form onSubmit={onSubmit} className="space-y-3 border-t border-outline-variant pt-4">
-            <p className="text-sm text-on-surface-variant">
-              After paying, add UTR and/or a screenshot so the committee can verify.
-            </p>
+            {proofLocked ? (
+              <p className="rounded-lg bg-surface-container-low px-4 py-3 text-sm text-on-surface" role="status">
+                Proof already submitted and pending committee review.
+                {existingProof?.utr?.trim()
+                  ? ` UTR / reference: ${existingProof.utr.trim()}.`
+                  : ''}
+                {existingProof?.hasScreenshot ? ' Screenshot is on file.' : ''} You cannot submit
+                another reference until this one is reviewed.
+              </p>
+            ) : (
+              <p className="text-sm text-on-surface-variant">
+                After paying, add a UTR / reference or a screenshot (at least one is required) so the
+                committee can verify.
+              </p>
+            )}
             <label className="block">
               <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                UTR / reference (optional)
+                UTR / reference
               </span>
               <input
                 value={utr}
                 onChange={(e) => setUtr(e.target.value)}
-                disabled={busy}
-                className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                disabled={busy || proofLocked}
+                readOnly={proofLocked}
+                className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
                 placeholder="Bank / UPI reference number"
               />
             </label>
-            <label className="block">
-              <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                Screenshot (optional)
-              </span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={busy}
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="mt-1 block w-full text-sm text-on-surface"
-              />
-            </label>
+            {!proofLocked ? (
+              <label className="block">
+                <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                  Screenshot
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={busy}
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  className="mt-1 block w-full text-sm text-on-surface"
+                />
+              </label>
+            ) : null}
+            {!proofLocked ? (
+              <p className="text-xs text-on-surface-variant">
+                Required: provide at least one of UTR or screenshot before submit.
+              </p>
+            ) : null}
             {error ? (
               <p
                 className="rounded-lg bg-red-50 text-red-700 text-sm p-3"
@@ -278,13 +315,23 @@ export default function OfflinePayModal({
                 {error}
               </p>
             ) : null}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {busy ? 'Submitting…' : 'Submit for verification'}
-            </button>
+            {!proofLocked ? (
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {busy ? 'Submitting…' : 'Submit for verification'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-lg border border-outline-variant px-4 py-3 text-sm font-bold uppercase tracking-wider text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                Close
+              </button>
+            )}
           </form>
         </div>
       </div>

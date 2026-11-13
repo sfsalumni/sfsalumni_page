@@ -42,6 +42,7 @@ import {
   mergeProfilePack,
   readPackedProfile,
 } from '@/lib/registration/registration-fields';
+import { PENDING_PROOF_LOCK_MESSAGE } from '@/lib/payments/offline-proof';
 import { normalizePhoneNumber, phoneValidationError, splitE164 } from '@/lib/phone';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -248,6 +249,23 @@ export async function getAccountRegistrationForEvent(
   const donation = await loadDonation(admin, reg.donation_id);
   const donationDue = donationDuePaise(donation);
 
+  const { data: pendingProofRows } = await admin
+    .from('offline_payment_proofs')
+    .select('id,utr,screenshot_path,status')
+    .eq('registration_id', reg.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const pendingProofRow = Array.isArray(pendingProofRows) ? pendingProofRows[0] : null;
+  const pendingProof = pendingProofRow
+    ? {
+        id: String(pendingProofRow.id),
+        utr: typeof pendingProofRow.utr === 'string' ? pendingProofRow.utr : null,
+        has_screenshot: Boolean(pendingProofRow.screenshot_path),
+        status: 'pending' as const,
+      }
+    : null;
+
   // A committee verification can be set directly in the database. Reading the registration
   // applies the same code rule as every other path, so the code appears without a save.
   const verified = Boolean(reg.core_committee_manually_verified);
@@ -273,6 +291,7 @@ export async function getAccountRegistrationForEvent(
         total_due_paise: committeeConfirmed ? 0 : feeDue + donationDue,
         committee_confirmed: committeeConfirmed,
         registration_code: registrationCode,
+        pending_offline_proof: pendingProof,
       },
       profile,
     },
@@ -388,6 +407,18 @@ export async function registerAccountForEvent(
     .in('payment_status', [...OPEN_PAYMENT_STATUSES])
     .maybeSingle();
   const existing = existingRaw as ExistingRow | null;
+
+  if (existing?.id) {
+    const { data: pendingProofRows } = await admin
+      .from('offline_payment_proofs')
+      .select('id')
+      .eq('registration_id', existing.id)
+      .eq('status', 'pending')
+      .limit(1);
+    if (Array.isArray(pendingProofRows) && pendingProofRows.length > 0) {
+      return { status: 400, payload: { error: PENDING_PROOF_LOCK_MESSAGE } };
+    }
+  }
 
   const donationSync = await syncDonationIntent(admin, {
     accountId: me.id,

@@ -8,6 +8,13 @@ import {
   formatInr,
   validateBankAccountFields,
 } from '../lib/payments/bank-details.ts';
+import {
+  PENDING_PROOF_LOCK_MESSAGE,
+  SCREENSHOT_BANK_REFERENCE,
+  bankReferenceFromProof,
+  pendingProofDisplay,
+  verificationStatusLabel,
+} from '../lib/payments/offline-proof.ts';
 
 if (formatInr(50000) !== '₹500') throw new Error(`formatInr 50000 → ${formatInr(50000)}`);
 if (formatInr(10150) !== '₹101.5') throw new Error(`formatInr 10150 → ${formatInr(10150)}`);
@@ -111,6 +118,46 @@ try {
   throw new Error('expected size fail');
 } catch (e) {
   if (!(e instanceof Error) || !/4 MB/i.test(e.message)) throw e;
+}
+
+if (bankReferenceFromProof({ utr: '  REF1  ', hasScreenshot: false }) !== 'REF1') {
+  throw new Error('bank ref from utr');
+}
+if (bankReferenceFromProof({ utr: '', hasScreenshot: true }) !== SCREENSHOT_BANK_REFERENCE) {
+  throw new Error('bank ref from screenshot');
+}
+try {
+  bankReferenceFromProof({ utr: '', hasScreenshot: false });
+  throw new Error('expected empty proof bank ref fail');
+} catch (e) {
+  if (!(e instanceof Error) || !/UTR|screenshot/i.test(e.message)) throw e;
+}
+
+if (verificationStatusLabel({ paymentStatus: 'pending', pendingProof: false, bankReference: '' }) !== 'not submitted') {
+  throw new Error('status not submitted');
+}
+if (
+  verificationStatusLabel({ paymentStatus: 'pending', pendingProof: true, bankReference: '' }) !==
+  'pending verification'
+) {
+  throw new Error('status pending proof');
+}
+if (
+  verificationStatusLabel({ paymentStatus: 'pending', pendingProof: false, bankReference: 'ABC' }) !==
+  'pending verification'
+) {
+  throw new Error('status bank ref');
+}
+if (verificationStatusLabel({ paymentStatus: 'paid', pendingProof: true, bankReference: 'x' }) !== 'paid') {
+  throw new Error('status paid wins');
+}
+
+const shown = pendingProofDisplay({ utr: 'UTR99', screenshot_path: null });
+if (shown.utr !== 'UTR99' || !shown.label.includes('UTR99') || !shown.label.includes('pending')) {
+  throw new Error('pending display utr');
+}
+if (!PENDING_PROOF_LOCK_MESSAGE.includes('pending committee review')) {
+  throw new Error('lock message');
 }
 
 console.log('ok: bank details');
