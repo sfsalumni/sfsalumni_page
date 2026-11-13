@@ -6,7 +6,7 @@
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const MAX_BULK_IDS = 50;
+const MAX_BULK_IDS = 100;
 
 export type BulkProofStatus = 'approved' | 'rejected';
 export type BulkRegistrationAction = 'verify' | 'mark_paid' | 'mark_unpaid' | 'unverify';
