@@ -117,7 +117,7 @@ export default function OfflinePayModal({
   }, [open, busy, phase, thanksMessage, onSubmitted, onClose]);
 
   useEffect(() => {
-    if (!open || !upiUri) {
+    if (!open || !upiUri || proofLocked) {
       setQrSrc('');
       return;
     }
@@ -139,7 +139,7 @@ export default function OfflinePayModal({
     return () => {
       cancel = true;
     };
-  }, [open, upiUri]);
+  }, [open, upiUri, proofLocked]);
 
   // Portal to document.body so this form is never nested inside the registration <form>
   // (nested forms make "Submit for verification" save the page form instead of posting proof).
@@ -255,6 +255,46 @@ export default function OfflinePayModal({
               OK
             </button>
           </div>
+        ) : proofLocked ? (
+          <div className="px-5 py-8 space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <h2 id={titleId} className="text-lg font-semibold text-on-surface">
+                Payment already submitted
+              </h2>
+              <button
+                ref={closeRef}
+                type="button"
+                onClick={onClose}
+                className="rounded-lg p-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-sm text-on-surface" role="status">
+              Your Bank / UPI payment proof is already on file and pending committee review. Do not
+              pay again.
+            </p>
+            {existingProof?.utr?.trim() ? (
+              <p className="text-sm text-on-surface-variant">
+                UTR / reference: <span className="tabular-nums text-on-surface">{existingProof.utr.trim()}</span>
+              </p>
+            ) : null}
+            {existingProof?.hasScreenshot ? (
+              <p className="text-sm text-on-surface-variant">Screenshot is on file.</p>
+            ) : null}
+            <p className="text-sm text-on-surface-variant">
+              Your QR will be generated after verification. You can update details after the
+              committee reviews this payment.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              OK
+            </button>
+          </div>
         ) : (
           <>
             <div className="sticky top-0 flex items-start justify-between gap-3 bg-surface border-b border-outline-variant px-5 py-4">
@@ -330,21 +370,10 @@ export default function OfflinePayModal({
               ) : null}
 
               <form onSubmit={onSubmit} className="space-y-3 border-t border-outline-variant pt-4">
-                {proofLocked ? (
-                  <p className="rounded-lg bg-surface-container-low px-4 py-3 text-sm text-on-surface" role="status">
-                    Proof already submitted and pending committee review.
-                    {existingProof?.utr?.trim()
-                      ? ` UTR / reference: ${existingProof.utr.trim()}.`
-                      : ''}
-                    {existingProof?.hasScreenshot ? ' Screenshot is on file.' : ''} You cannot submit
-                    another reference until this one is reviewed.
-                  </p>
-                ) : (
-                  <p className="text-sm text-on-surface-variant">
-                    After paying, enter the UTR / bank reference so the committee can verify. A screenshot
-                    is optional.
-                  </p>
-                )}
+                <p className="text-sm text-on-surface-variant">
+                  After paying, enter the UTR / bank reference so the committee can verify. A screenshot
+                  is optional.
+                </p>
                 <label className="block">
                   <span className="text-xs uppercase tracking-wider text-on-surface-variant">
                     UTR / reference *
@@ -352,28 +381,25 @@ export default function OfflinePayModal({
                   <input
                     value={utr}
                     onChange={(e) => setUtr(e.target.value)}
-                    disabled={busy || proofLocked}
-                    readOnly={proofLocked}
-                    required={!proofLocked}
-                    aria-required={!proofLocked}
+                    disabled={busy}
+                    required
+                    aria-required
                     className="mt-1 w-full px-4 py-3 rounded-lg border border-outline-variant text-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:opacity-70"
                     placeholder="Bank / UPI reference number"
                   />
                 </label>
-                {!proofLocked ? (
-                  <label className="block">
-                    <span className="text-xs uppercase tracking-wider text-on-surface-variant">
-                      Screenshot (optional)
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      disabled={busy}
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      className="mt-1 block w-full text-sm text-on-surface"
-                    />
-                  </label>
-                ) : null}
+                <label className="block">
+                  <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                    Screenshot (optional)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={busy}
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    className="mt-1 block w-full text-sm text-on-surface"
+                  />
+                </label>
                 {error ? (
                   <p
                     className="rounded-lg bg-red-50 text-red-700 text-sm p-3"
@@ -382,23 +408,13 @@ export default function OfflinePayModal({
                     {error}
                   </p>
                 ) : null}
-                {!proofLocked ? (
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {busy ? 'Registering…' : 'Register'}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="w-full rounded-lg border border-outline-variant px-4 py-3 text-sm font-bold uppercase tracking-wider text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    Close
-                  </button>
-                )}
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full rounded-lg bg-primary text-on-primary px-4 py-3 text-sm font-bold uppercase tracking-wider disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  {busy ? 'Registering…' : 'Register'}
+                </button>
               </form>
             </div>
           </>
