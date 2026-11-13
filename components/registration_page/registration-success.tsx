@@ -1,7 +1,6 @@
 // components/registration_page/registration-success.tsx
-// Confirmation screen. It shows the registration code once the registration is confirmed, either
-// by full payment or by the committee's manual verification. Confirmed registrations never ask for
-// payment. Amounts come from `money`, which the server returned.
+// Confirmation screen. It shows the registration code once the registration is paid in full.
+// Confirmed registrations never ask for payment. Amounts come from `money`, which the server returned.
 
 import type { Dispatch, SetStateAction } from 'react';
 import BackHomeLink from '@/components/back-home-link';
@@ -18,7 +17,7 @@ export interface RegistrationSuccessProps {
     busy: boolean;
     formDirty: boolean;
     money: RegistrationMoney;
-    /** True when the committee has verified the registration. Overrides any balance still shown. */
+    /** True when payment is settled and the registration code / QR is ready. */
     committeeConfirmed: boolean;
     error: string;
     signedIn: boolean;
@@ -72,12 +71,6 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                             {money.totalDuePaise > 0
                                 ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}. Edit details to pay by Bank / UPI.`
                                 : 'Your registration is saved. Your registration ID appears once payment is confirmed.'}
-                        </p>
-                    )}
-
-                    {isConfirmed && committeeConfirmed && !isPaidInFull && (
-                        <p className="text-body-sm text-on-surface-variant mb-6">
-                            The committee has confirmed your registration. No further payment is needed.
                         </p>
                     )}
 

@@ -38,7 +38,13 @@ assert(proofOk.ids.length === 2, 'proof ids');
 const regBad = parseBulkRegistrationBody({ ids: [uuid], action: 'delete' });
 assert(regBad.ok === false, 'reg action');
 
-const regOk = parseBulkRegistrationBody({ ids: [uuid], action: 'verify' });
-assert(regOk.ok === true && regOk.action === 'verify', 'reg verify');
+const regVerifyGone = parseBulkRegistrationBody({ ids: [uuid], action: 'verify' });
+assert(regVerifyGone.ok === false, 'verify action removed');
+
+const regOk = parseBulkRegistrationBody({ ids: [uuid], action: 'mark_paid' });
+assert(regOk.ok === true && regOk.action === 'mark_paid', 'reg mark_paid');
+
+const regUnpaid = parseBulkRegistrationBody({ ids: [uuid], action: 'mark_unpaid' });
+assert(regUnpaid.ok === true && regUnpaid.action === 'mark_unpaid', 'reg mark_unpaid');
 
 console.log('ok: admin bulk actions');

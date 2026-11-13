@@ -146,9 +146,7 @@ function summarize(row: GateRow): GateRegistration {
       ? Math.max(0, Number(donation.amount_paise) || 0)
       : 0;
 
-  const committeeConfirmed = row.core_committee_manually_verified === true;
-  const confirmed =
-    committeeConfirmed || (row.payment_status === 'paid' && feeDue === 0 && donationDue === 0);
+  const confirmed = row.payment_status === 'paid' && feeDue === 0 && donationDue === 0;
   const totalDue = confirmed ? 0 : feeDue + donationDue;
 
   const attending = row.attending !== false;
@@ -175,7 +173,7 @@ function summarize(row: GateRow): GateRegistration {
     event_title: event?.title || 'Event',
     attending,
     payment_status: row.payment_status,
-    committee_confirmed: committeeConfirmed,
+    committee_confirmed: confirmed,
     confirmed,
     amount_paid_paise: feePaid,
     total_due_paise: totalDue,

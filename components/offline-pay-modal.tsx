@@ -103,7 +103,7 @@ export default function OfflinePayModal({
       if (phase === 'thanks') {
         const msg =
           thanksMessage ||
-          'Thank you. Your payment is pending committee verification. Your QR will be generated after verification.';
+          'Thank you. Your payment is pending confirmation. Your QR will appear once the committee marks it paid.';
         onSubmitted?.(msg);
         setPhase('pay');
         setThanksMessage('');
@@ -148,7 +148,7 @@ export default function OfflinePayModal({
   function finishThanks() {
     const msg =
       thanksMessage ||
-      'Thank you. Your payment is pending committee verification. Your QR will be generated after verification.';
+      'Thank you. Your payment is pending confirmation. Your QR will appear once the committee marks it paid.';
     onSubmitted?.(msg);
     setPhase('pay');
     setThanksMessage('');
@@ -196,7 +196,7 @@ export default function OfflinePayModal({
       setUtr('');
       setFile(null);
       setThanksMessage(
-        'Thank you for your payment. The committee will verify the remittance. Your QR will be generated after verification.'
+        'Thank you for your payment. Your QR will appear once the committee marks it paid.'
       );
       setPhase('thanks');
     } catch {
@@ -241,10 +241,10 @@ export default function OfflinePayModal({
               Thank you
             </h2>
             <p className="text-sm text-on-surface-variant">
-              Thank you for your payment. The committee will verify the remittance.
+              Thank you for your payment. The committee will confirm the remittance.
             </p>
             <p className="text-sm text-on-surface font-medium">
-              Your QR will be generated after verification.
+              Your QR will appear once they mark it paid.
             </p>
             <button
               ref={closeRef}
@@ -284,8 +284,8 @@ export default function OfflinePayModal({
               <p className="text-sm text-on-surface-variant">Screenshot is on file.</p>
             ) : null}
             <p className="text-sm text-on-surface-variant">
-              Your QR will be generated after verification. You can update details after the
-              committee reviews this payment.
+              Your QR will appear once the committee marks this payment paid. You can update
+              details after they review it.
             </p>
             <button
               type="button"

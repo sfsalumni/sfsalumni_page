@@ -55,7 +55,7 @@ const BUTTON_PRIMARY =
 const BUTTON_OUTLINE =
     'rounded-lg border border-primary/20 bg-surface-ivory px-3 py-1.5 text-label-sm text-primary disabled:opacity-50 cursor-pointer';
 
-type BulkAction = 'verify' | 'unverify' | 'mark_paid' | 'mark_unpaid';
+type BulkAction = 'mark_paid' | 'mark_unpaid';
 
 export default function AdminRegistrationsInner() {
     const searchParams = useSearchParams();
@@ -146,8 +146,6 @@ export default function AdminRegistrationsInner() {
             const ok = Number(payload.succeeded || 0);
             const failed = Number(payload.failed || 0);
             const labels: Record<BulkAction, string> = {
-                verify: 'verified',
-                unverify: 'unverified',
                 mark_paid: 'marked paid',
                 mark_unpaid: 'marked unpaid',
             };
@@ -195,9 +193,11 @@ export default function AdminRegistrationsInner() {
     const printedAt = useMemo(() => new Date().toLocaleString('en-IN'), [rows]);
     const allSelected = rows.length > 0 && selected.size === rows.length;
     const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
-    const canBulkVerify = selectedRows.some((r) => r.billed_paise > 0 && r.state !== 'cancelled' && !r.committee_verified);
     const canBulkMarkPaid = selectedRows.some(
         (r) => r.billed_paise > 0 && r.payment_status !== 'paid' && r.state !== 'cancelled'
+    );
+    const canBulkMarkUnpaid = selectedRows.some(
+        (r) => r.billed_paise > 0 && (r.payment_status === 'paid' || r.settled_paise > 0) && r.state !== 'cancelled'
     );
 
     return (
@@ -401,36 +401,16 @@ export default function AdminRegistrationsInner() {
                                                     {r.billed_paise === 0 && (
                                                         <span className="text-label-sm text-on-surface-variant">No fee</span>
                                                     )}
-                                                    {r.billed_paise > 0 && r.state !== 'cancelled' && (
-                                                        <button
-                                                            type="button"
-                                                            disabled={isBusy}
-                                                            className={r.committee_verified ? BUTTON_OUTLINE : BUTTON_PRIMARY}
-                                                            onClick={() =>
-                                                                void patchRegistration(
-                                                                    r.id,
-                                                                    r.committee_verified
-                                                                        ? { core_committee_manually_verified: false }
-                                                                        : { core_committee_manually_verified: true },
-                                                                    r.committee_verified
-                                                                        ? 'Verification removed.'
-                                                                        : 'Verified by committee. Code issued.'
-                                                                )
-                                                            }
-                                                        >
-                                                            {r.committee_verified ? 'Remove verification' : 'Verify'}
-                                                        </button>
-                                                    )}
                                                     {r.billed_paise > 0 && r.payment_status !== 'paid' && r.state !== 'cancelled' && (
                                                         <button
                                                             type="button"
                                                             disabled={isBusy}
-                                                            className={BUTTON_OUTLINE}
+                                                            className={BUTTON_PRIMARY}
                                                             onClick={() =>
                                                                 void patchRegistration(
                                                                     r.id,
                                                                     { payment_status: 'paid' },
-                                                                    'Marked paid.'
+                                                                    'Marked paid. Registration code issued.'
                                                                 )
                                                             }
                                                         >
@@ -471,24 +451,24 @@ export default function AdminRegistrationsInner() {
                 </div>
 
                 <AdminBulkBar count={selected.size} busy={busy === 'bulk'} onClear={() => setSelected(new Set())}>
-                    {canBulkVerify ? (
-                        <button
-                            type="button"
-                            disabled={busy === 'bulk'}
-                            onClick={() => void runBulk('verify')}
-                            className={BUTTON_PRIMARY}
-                        >
-                            Verify selected
-                        </button>
-                    ) : null}
                     {canBulkMarkPaid ? (
                         <button
                             type="button"
                             disabled={busy === 'bulk'}
                             onClick={() => void runBulk('mark_paid')}
-                            className={BUTTON_OUTLINE}
+                            className={BUTTON_PRIMARY}
                         >
                             Mark paid selected
+                        </button>
+                    ) : null}
+                    {canBulkMarkUnpaid ? (
+                        <button
+                            type="button"
+                            disabled={busy === 'bulk'}
+                            onClick={() => void runBulk('mark_unpaid')}
+                            className={BUTTON_OUTLINE}
+                        >
+                            Mark unpaid selected
                         </button>
                     ) : null}
                 </AdminBulkBar>

@@ -33,6 +33,14 @@ export function shouldIssueRegistrationCode(
   return status === 'paid' && !String(existing || '').trim();
 }
 
+/** Fee paid and linked donation settled — the only gate for issuing a registration code. */
+export function isEligibleForRegistrationCode(input: {
+  paymentStatus: string;
+  donationDuePaise: number;
+}): boolean {
+  return input.paymentStatus === 'paid' && input.donationDuePaise === 0;
+}
+
 export function missingColumn(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   const message = error.message || '';
@@ -46,7 +54,7 @@ type CodeResult = {
 
 type CodeQuery = {
   select: (cols: string) => CodeQuery;
-  update: (patch: { registration_code: string }) => CodeQuery;
+  update: (patch: { registration_code: string | null }) => CodeQuery;
   eq: (col: string, val: string) => CodeQuery;
   is: (col: string, val: null) => CodeQuery;
   maybeSingle: () => Promise<CodeResult>;
@@ -120,4 +128,22 @@ export async function ensureRegistrationCode(
     if (saved.data?.registration_code) return saved.data.registration_code;
   }
   return null;
+}
+
+/** Clears the registration code when payment is reversed (mark unpaid). */
+export async function clearRegistrationCode(
+  admin: RegistrationCodeAdmin,
+  registrationId: string
+): Promise<boolean> {
+  const saved = await admin
+    .from('event_registrations')
+    .update({ registration_code: null })
+    .eq('id', registrationId)
+    .select('registration_code')
+    .maybeSingle();
+  if (saved.error) {
+    if (missingColumn(saved.error)) return false;
+    return false;
+  }
+  return true;
 }

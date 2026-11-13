@@ -266,18 +266,12 @@ export async function getAccountRegistrationForEvent(
       }
     : null;
 
-  // A committee verification can be set directly in the database. Reading the registration
-  // applies the same code rule as every other path, so the code appears without a save.
-  const verified = Boolean(reg.core_committee_manually_verified);
+  // Reading applies the same paid-in-full code rule as every other path.
   const registrationCode = await issueRegistrationCodeIfEligible(admin, reg.id, {
     paymentStatus: reg.payment_status,
     donationDuePaise: donationDue,
-    verified,
   });
-
-  // A verified registration is confirmed by the committee. Its balance no longer blocks the QR,
-  // so the screens treat it as settled and show the code.
-  const committeeConfirmed = verified && registrationCode !== null;
+  const passReady = registrationCode !== null;
 
   return {
     status: 200,
@@ -288,8 +282,8 @@ export async function getAccountRegistrationForEvent(
         intended_donation_paise: donation?.amount_paise ?? 0,
         donation_payment_status: donation?.payment_status ?? null,
         donation_due_paise: donationDue,
-        total_due_paise: committeeConfirmed ? 0 : feeDue + donationDue,
-        committee_confirmed: committeeConfirmed,
+        total_due_paise: passReady ? 0 : feeDue + donationDue,
+        committee_confirmed: passReady,
         registration_code: registrationCode,
         pending_offline_proof: pendingProof,
       },
@@ -490,7 +484,6 @@ export async function registerAccountForEvent(
   const registrationCode = await issueRegistrationCodeIfEligible(admin, regId, {
     paymentStatus: payment_status,
     donationDuePaise: donationDue,
-    verified: Boolean(existing?.core_committee_manually_verified),
   });
 
   const fullName = String(body.full_name || '').trim() || me.full_name;

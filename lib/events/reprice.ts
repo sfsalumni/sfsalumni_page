@@ -108,7 +108,6 @@ export async function repriceEventRegistrations(eventId: string): Promise<number
       await issueRegistrationCodeIfEligible(admin, row.id, {
         paymentStatus: 'paid',
         donationDuePaise: donationDuePaise(donation),
-        verified: Boolean(row.core_committee_manually_verified),
       });
     }
   }

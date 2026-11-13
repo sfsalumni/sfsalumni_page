@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import {
+  clearRegistrationCode,
   ensureRegistrationCode,
+  isEligibleForRegistrationCode,
   normalizeRegistrationCode,
   registrationCodeFrom,
   shouldIssueRegistrationCode,
@@ -25,8 +27,25 @@ assert(shouldIssueRegistrationCode('paid', 'SFS-ABCDE') === false, 'existing cod
 assert(shouldIssueRegistrationCode('partial', null) === false, 'a balance does not get a code');
 assert(shouldIssueRegistrationCode('pending', '') === false, 'unpaid does not get a code');
 
+assert(
+  isEligibleForRegistrationCode({ paymentStatus: 'paid', donationDuePaise: 0 }) === true,
+  'fully settled is eligible'
+);
+assert(
+  isEligibleForRegistrationCode({ paymentStatus: 'paid', donationDuePaise: 100 }) === false,
+  'unpaid donation blocks eligibility'
+);
+assert(
+  isEligibleForRegistrationCode({ paymentStatus: 'pending', donationDuePaise: 0 }) === false,
+  'unpaid fee is not eligible'
+);
+assert(
+  isEligibleForRegistrationCode({ paymentStatus: 'partial', donationDuePaise: 0 }) === false,
+  'partial fee is not eligible'
+);
+
 function memoryAdmin(start) {
-  const state = { code: start, missing: false, writes: 0 };
+  const state = { code: start, missing: false, writes: 0, hasNext: false, next: null };
   const api = {
     from() {
       return api;
@@ -37,6 +56,7 @@ function memoryAdmin(start) {
     update(patch) {
       state.writes += 1;
       state.next = patch.registration_code;
+      state.hasNext = true;
       return api;
     },
     eq() {
@@ -49,8 +69,11 @@ function memoryAdmin(start) {
       if (state.missing) {
         return { data: null, error: { code: '42703', message: 'column registration_code does not exist' } };
       }
-      if (state.next) state.code = state.next;
-      state.next = null;
+      if (state.hasNext) {
+        state.code = state.next;
+        state.hasNext = false;
+        state.next = null;
+      }
       return { data: { registration_code: state.code }, error: null };
     },
   };
@@ -78,6 +101,11 @@ assert(partial.state.writes === 0, 'partial does not update');
 const missing = memoryAdmin(null);
 missing.state.missing = true;
 assert((await ensureRegistrationCode(missing.api, 'id', 'paid', () => 'SFS-NEW11')) === null, 'missing column does not throw');
+
+const clear = memoryAdmin('SFS-KEEP1');
+assert((await clearRegistrationCode(clear.api, 'id')) === true, 'clear removes code');
+assert(clear.state.code === null, 'code is null after clear');
+assert(clear.state.writes === 1, 'clear writes once');
 
 const qr = await QRCode.toDataURL('SFS-ABCDE', { margin: 1, width: 220, errorCorrectionLevel: 'M' });
 assert(qr.startsWith('data:image/png;base64,'), 'qr code is a png of the registration id');

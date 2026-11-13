@@ -4,7 +4,6 @@ import { parseBulkRegistrationBody } from '@/lib/admin/bulk-actions';
 import {
   applyRegistrationPayment,
   markRegistrationUnpaid,
-  setCommitteeVerified,
 } from '@/lib/events/mark-paid';
 
 export const dynamic = 'force-dynamic';
@@ -24,19 +23,10 @@ export async function POST(request: Request) {
   let failed = 0;
 
   for (const id of parsed.ids) {
-    let result:
-      | { ok: true }
-      | { ok: false; status: number; error: string };
-
-    if (parsed.action === 'verify') {
-      result = await setCommitteeVerified(id, true);
-    } else if (parsed.action === 'unverify') {
-      result = await setCommitteeVerified(id, false);
-    } else if (parsed.action === 'mark_paid') {
-      result = await applyRegistrationPayment({ registrationId: id, settleFull: true });
-    } else {
-      result = await markRegistrationUnpaid(id);
-    }
+    const result =
+      parsed.action === 'mark_paid'
+        ? await applyRegistrationPayment({ registrationId: id, settleFull: true })
+        : await markRegistrationUnpaid(id);
 
     if (result.ok) {
       results.push({ id, ok: true });

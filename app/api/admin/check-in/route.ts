@@ -104,8 +104,7 @@ export async function GET(request: Request) {
       ? Math.max(0, Number(donation.amount_paise) || 0)
       : 0;
 
-  const verified = row.core_committee_manually_verified === true;
-  const confirmed = verified || (row.payment_status === 'paid' && feeDue === 0 && donationDue === 0);
+  const confirmed = row.payment_status === 'paid' && feeDue === 0 && donationDue === 0;
   const totalDue = confirmed ? 0 : feeDue + donationDue;
 
   const summary = venuePassSummary({
@@ -129,7 +128,7 @@ export async function GET(request: Request) {
     people: summary.people,
     meals: summary.meals,
     payment_status: row.payment_status,
-    committee_confirmed: verified,
+    committee_confirmed: confirmed,
     amount_paid_paise: feePaid,
     total_due_paise: totalDue,
     paid: summary.paid,

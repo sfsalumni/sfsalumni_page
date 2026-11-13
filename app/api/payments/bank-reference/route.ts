@@ -1,7 +1,7 @@
 // app/api/payments/bank-reference/route.ts
 // Stores the bank reference that an alumnus enters after a foreign remittance. It only records
 // the reference. It never marks anything paid: the committee reconciles the remittance and
-// then sets core_committee_manually_verified, which issues the code through mark-paid.
+// marks the registration paid, which issues the code through mark-paid.
 // Saving the same reference again changes nothing.
 
 import { NextResponse } from 'next/server';

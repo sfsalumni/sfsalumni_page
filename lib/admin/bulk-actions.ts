@@ -1,5 +1,5 @@
 /**
- * Pure payload parsers for admin bulk approve / verify actions.
+ * Pure payload parsers for admin bulk approve / mark paid actions.
  * Routes call these before looping single-item decide helpers.
  */
 
@@ -9,7 +9,7 @@ const UUID_RE =
 const MAX_BULK_IDS = 100;
 
 export type BulkProofStatus = 'approved' | 'rejected';
-export type BulkRegistrationAction = 'verify' | 'mark_paid' | 'mark_unpaid' | 'unverify';
+export type BulkRegistrationAction = 'mark_paid' | 'mark_unpaid';
 
 export type BulkIdsOk = { ok: true; ids: string[] };
 export type BulkIdsErr = { ok: false; error: string };
@@ -58,13 +58,8 @@ export function parseBulkRegistrationBody(body: unknown):
   const idsResult = parseBulkIds(b.ids);
   if (!idsResult.ok) return idsResult;
   const action = String(b.action || '').trim() as BulkRegistrationAction;
-  if (
-    action !== 'verify' &&
-    action !== 'mark_paid' &&
-    action !== 'mark_unpaid' &&
-    action !== 'unverify'
-  ) {
-    return { ok: false, error: 'action must be verify, unverify, mark_paid, or mark_unpaid' };
+  if (action !== 'mark_paid' && action !== 'mark_unpaid') {
+    return { ok: false, error: 'action must be mark_paid or mark_unpaid' };
   }
   return { ok: true, ids: idsResult.ids, action };
 }

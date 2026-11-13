@@ -1,18 +1,19 @@
 // lib/events/mark-paid.ts
 // The only code that marks a registration or its donation as paid, and the only code that
-// issues a registration code after payment. Verify, webhook, admin, and the save path all
+// issues or clears a registration code after payment. Webhook, admin, and the save path all
 // go through here so the rules cannot drift apart.
 //
 // Rules:
 // - A Razorpay payment is applied to the fee first, then to the linked donation.
-// - A registration code is issued when the fee and the donation are both settled, or when
-//   the committee has verified the registration manually (core_committee_manually_verified).
-//   Verification issues the code but does not change payment_status.
+// - A registration code is issued when the fee and the donation are both settled.
+// - Mark unpaid clears payment and nullifies the registration code.
 // - Applying the same Razorpay payment id twice changes nothing.
 
 import { amountDuePaise, jubileeStatusFromPayment, statusFromAmounts } from '@/lib/events/balance';
 import {
+  clearRegistrationCode,
   ensureRegistrationCode,
+  isEligibleForRegistrationCode,
   readRegistrationCode,
   type RegistrationCodeAdmin,
 } from '@/lib/events/registration-code';
@@ -21,7 +22,7 @@ import { createAdminClient } from '@/lib/supabase-admin';
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const REGISTRATION_COLUMNS =
-  'id,event_id,account_id,attending,total_cost_paise,amount_paid_paise,payment_status,donation_id,razorpay_order_id,razorpay_payment_id,core_committee_manually_verified';
+  'id,event_id,account_id,attending,total_cost_paise,amount_paid_paise,payment_status,donation_id,razorpay_order_id,razorpay_payment_id';
 
 const DONATION_COLUMNS = 'id,amount_paise,payment_status';
 
@@ -36,7 +37,6 @@ export type RegistrationSnapshot = {
   donation_id: string | null;
   razorpay_order_id: string | null;
   razorpay_payment_id: string | null;
-  core_committee_manually_verified: boolean | null;
 };
 
 export type DonationSnapshot = {
@@ -63,11 +63,7 @@ export type SettleFailure = {
 export type SettleResult = SettleSuccess | SettleFailure;
 
 export type UnpaidResult =
-  | { ok: true; payment_status: 'pending'; amount_paid_paise: 0 }
-  | SettleFailure;
-
-export type VerifiedResult =
-  | { ok: true; core_committee_manually_verified: boolean; registration_code: string | null }
+  | { ok: true; payment_status: 'pending'; amount_paid_paise: 0; registration_code: null }
   | SettleFailure;
 
 /** Donation still owed on the registration's donation row. Failed or paid rows owe nothing. */
@@ -104,14 +100,13 @@ export async function loadDonation(
   return data as unknown as DonationSnapshot;
 }
 
-/** Issues the registration code when the registration is eligible. Returns the code, or null. */
+/** Issues the registration code when fee + donation are fully settled. Returns the code, or null. */
 export async function issueRegistrationCodeIfEligible(
   admin: AdminClient,
   registrationId: string,
-  input: { paymentStatus: string; donationDuePaise: number; verified: boolean }
+  input: { paymentStatus: string; donationDuePaise: number }
 ): Promise<string | null> {
-  const fullySettled = input.paymentStatus === 'paid' && input.donationDuePaise === 0;
-  if (!fullySettled && !input.verified) return null;
+  if (!isEligibleForRegistrationCode(input)) return null;
   return ensureRegistrationCode(admin as unknown as RegistrationCodeAdmin, registrationId, 'paid');
 }
 
@@ -230,7 +225,6 @@ async function settle(
   const registrationCode = await issueRegistrationCodeIfEligible(admin, registration.id, {
     paymentStatus,
     donationDuePaise: donationDueAfter,
-    verified: Boolean(registration.core_committee_manually_verified),
   });
 
   return {
@@ -331,40 +325,6 @@ export async function markRegistrationUnpaid(registrationId: string): Promise<Un
   }
 
   await syncJubileeStatus(admin, registration, 'pending');
-  return { ok: true, payment_status: 'pending', amount_paid_paise: 0 };
-}
-
-/**
- * Admin: sets or clears the committee's manual verification. Setting it true issues the
- * registration code. Clearing it leaves the code in place, since it may already be printed.
- */
-export async function setCommitteeVerified(registrationId: string, verified: boolean): Promise<VerifiedResult> {
-  const admin = createAdminClient();
-  const registration = await loadRegistration(admin, registrationId);
-  if (!registration) return { ok: false, status: 404, error: 'Registration not found' };
-
-  const { error } = await admin
-    .from('event_registrations')
-    .update({ core_committee_manually_verified: verified, updated_at: new Date().toISOString() })
-    .eq('id', registration.id);
-  if (error) {
-    console.error('mark verified', error);
-    return { ok: false, status: 500, error: 'Could not update verification' };
-  }
-
-  if (!verified) {
-    return {
-      ok: true,
-      core_committee_manually_verified: false,
-      registration_code: await readRegistrationCode(admin as unknown as RegistrationCodeAdmin, registration.id),
-    };
-  }
-
-  const donation = await loadDonation(admin, registration.donation_id);
-  const registrationCode = await issueRegistrationCodeIfEligible(admin, registration.id, {
-    paymentStatus: registration.payment_status,
-    donationDuePaise: donationDuePaise(donation),
-    verified: true,
-  });
-  return { ok: true, core_committee_manually_verified: true, registration_code: registrationCode };
+  await clearRegistrationCode(admin as unknown as RegistrationCodeAdmin, registration.id);
+  return { ok: true, payment_status: 'pending', amount_paid_paise: 0, registration_code: null };
 }

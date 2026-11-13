@@ -1,8 +1,8 @@
 // app/registration/page.tsx
 // Registration route. The database is the source of truth for every amount shown on load.
 // Name, email and phone come from the signed-in alumni account (alumni_accounts), not from this form.
-// When the committee has verified a registration, the server reports committee_confirmed and the
-// page shows the confirmed state with the registration code, and no payment is asked for.
+// When the registration is paid in full, the server reports committee_confirmed with the
+// registration code, and no payment is asked for.
 // Bank / UPI proof is submitted via OfflinePayModal (UTR and/or screenshot).
 // Parking: a yes/no plus 2-wheeler and 4-wheeler counts. Total vehicles may not exceed guests + 1.
 
