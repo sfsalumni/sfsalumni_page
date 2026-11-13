@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import AmountWithFx from '@/components/amount-with-fx';
 import {
   buildUpiPayUri,
@@ -52,6 +53,7 @@ export default function OfflinePayModal({
 }: Props) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [mounted, setMounted] = useState(false);
   const [qrSrc, setQrSrc] = useState('');
   const [utr, setUtr] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -70,16 +72,25 @@ export default function OfflinePayModal({
     : null;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     setUtr(existingProof?.utr?.trim() || '');
     setFile(null);
     setError('');
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open, busy, onClose, existingProof?.utr]);
 
   useEffect(() => {
@@ -107,7 +118,9 @@ export default function OfflinePayModal({
     };
   }, [open, upiUri]);
 
-  if (!open) return null;
+  // Portal to document.body so this form is never nested inside the registration <form>
+  // (nested forms make "Submit for verification" save the page form instead of posting proof).
+  if (!open || !mounted) return null;
 
   async function onCopy(label: string, value: string) {
     const ok = await copyText(value);
@@ -117,6 +130,7 @@ export default function OfflinePayModal({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
     setError('');
     if (proofLocked) {
       setError('A proof is already pending committee review.');
@@ -172,7 +186,7 @@ export default function OfflinePayModal({
     rows.push({ key: 'upi', label: 'UPI ID', value: account.upi_id });
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4"
       role="presentation"
@@ -332,6 +346,7 @@ export default function OfflinePayModal({
           </form>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

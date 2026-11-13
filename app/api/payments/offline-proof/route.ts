@@ -84,7 +84,9 @@ export async function POST(request: Request) {
     }
     const { data: reg, error: regErr } = await admin
       .from('event_registrations')
-      .select('id,account_id,total_cost_paise,amount_paid_paise,payment_status')
+      .select(
+        'id,account_id,total_cost_paise,amount_paid_paise,payment_status,donation:donations!event_registrations_donation_id_fkey(amount_paise,payment_status)'
+      )
       .eq('id', registrationId)
       .maybeSingle();
     if (regErr || !reg || reg.account_id !== me.id) {
@@ -92,7 +94,15 @@ export async function POST(request: Request) {
     }
     const total = Math.max(0, Number(reg.total_cost_paise) || 0);
     const paid = Math.max(0, Number(reg.amount_paid_paise) || 0);
-    amountPaise = Math.max(0, total - paid);
+    const feeDue = Math.max(0, total - paid);
+    const donationRow = Array.isArray(reg.donation) ? reg.donation[0] : reg.donation;
+    const donationStatus = donationRow?.payment_status ?? null;
+    const donationAmount = Math.max(0, Number(donationRow?.amount_paise) || 0);
+    const donationDue =
+      donationAmount > 0 && donationStatus && donationStatus !== 'paid' && donationStatus !== 'failed'
+        ? donationAmount
+        : 0;
+    amountPaise = feeDue + donationDue;
     if (amountPaise < 100) {
       return NextResponse.json({ error: 'Nothing due on this registration' }, { status: 400 });
     }
