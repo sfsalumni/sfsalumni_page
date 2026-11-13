@@ -43,7 +43,6 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
     const isPaidInFull = money.paymentStatus === 'paid' && money.totalDuePaise === 0;
     const isConfirmed = committeeConfirmed || isPaidInFull;
     const code = money.registrationCode;
-    const canPayMore = !isConfirmed && !formDirty && money.totalDuePaise > 0;
 
     function changeGuestCount(raw: string) {
         const next = Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, parseInt(raw, 10) || 0));
@@ -71,7 +70,7 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                     {!isConfirmed && (
                         <p className="text-body-sm text-on-surface-variant mb-6">
                             {money.totalDuePaise > 0
-                                ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}.`
+                                ? `Amount due ${formatCostForDisplay(money.totalDuePaise)}. Edit details to pay by Bank / UPI.`
                                 : 'Your registration is saved. Your registration ID appears once payment is confirmed.'}
                         </p>
                     )}
@@ -110,16 +109,6 @@ export function RegistrationSuccess(props: RegistrationSuccessProps) {
                                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg bg-primary hover:bg-navy-subtle text-on-primary text-label-md uppercase tracking-wider shadow-md transition-all disabled:opacity-50 cursor-pointer"
                             >
                                 {busy ? 'Saving…' : 'Save changes'}
-                            </button>
-                        )}
-                        {canPayMore && (
-                            <button
-                                type="button"
-                                onClick={onSavePartySize}
-                                disabled={busy}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg bg-primary hover:bg-navy-subtle text-on-primary text-label-md uppercase tracking-wider shadow-md transition-all disabled:opacity-50"
-                            >
-                                {busy ? 'Working…' : `Pay ${formatCostForDisplay(money.totalDuePaise)}`}
                             </button>
                         )}
                         {!isConfirmed && (

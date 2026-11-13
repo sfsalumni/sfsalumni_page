@@ -6,16 +6,22 @@ import {
   selectCatalog,
   withoutDietPrices,
   withoutFeeBatch,
+  withoutInstagramUrl,
   withoutRefundEmail,
 } from '@/lib/events/catalog-select';
+import { normalizeInstagramUrl } from '@/lib/events/instagram';
 import { missingColumn } from '@/lib/events/registration-code';
 import { normalizeRefundEmail } from '@/lib/events/refund-mailto';
+import { restoreFields, softDeleteFields } from '@/lib/events/soft-delete';
 import { EVENT_SELECT } from '@/lib/events/types';
 import { parseNonNegInt, parseOptionalBatchYear } from '@/lib/events/pricing';
 import { repriceEventRegistrations } from '@/lib/events/reprice';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 type Ctx = { params: { id: string } };
+
+const SOFT_DELETE_MIGRATION =
+  'Soft delete is not available yet. Apply the event_catalog deleted_at migration.';
 
 export async function GET(_request: Request, ctx: Ctx) {
   const me = await requireVerifiedAdmin();
@@ -55,6 +61,16 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (body.fee_batch_to !== undefined) patch.fee_batch_to = parseOptionalBatchYear(body.fee_batch_to);
   if (body.fee_batch_paise !== undefined) patch.fee_batch_paise = parseNonNegInt(body.fee_batch_paise);
   if (body.refund_email !== undefined) patch.refund_email = normalizeRefundEmail(body.refund_email);
+  if (body.instagram_url !== undefined) {
+    try {
+      patch.instagram_url = normalizeInstagramUrl(body.instagram_url);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : 'Invalid Instagram URL' },
+        { status: 400 }
+      );
+    }
+  }
   if (body.is_primary !== undefined) patch.is_primary = Boolean(body.is_primary);
 
   if (patch.title === '' || patch.summary === '') {
@@ -76,7 +92,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (error && missingColumn(error)) {
     const retry = await admin
       .from('event_catalog')
-      .update(withoutRefundEmail(withoutFeeBatch(withoutDietPrices(patch))))
+      .update(withoutInstagramUrl(withoutRefundEmail(withoutFeeBatch(withoutDietPrices(patch)))))
       .eq('id', id)
       .select(EVENT_SELECT)
       .maybeSingle();
@@ -105,4 +121,27 @@ export async function PATCH(request: Request, ctx: Ctx) {
   if (pricingTouched) await repriceEventRegistrations(id);
 
   return NextResponse.json(warning ? { ...data, warning } : data);
+}
+
+export async function DELETE(_request: Request, ctx: Ctx) {
+  const me = await requireVerifiedAdmin();
+  if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const id = ctx.params.id;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('event_catalog')
+    .update(softDeleteFields())
+    .eq('id', id)
+    .select(EVENT_SELECT)
+    .maybeSingle();
+
+  if (error && missingColumn(error)) {
+    return NextResponse.json({ error: SOFT_DELETE_MIGRATION }, { status: 500 });
+  }
+  if (error || !data) {
+    console.error('admin events soft delete', error);
+    return NextResponse.json({ error: error?.message || 'Could not delete event' }, { status: 500 });
+  }
+  return NextResponse.json(data);
 }

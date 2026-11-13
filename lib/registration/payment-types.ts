@@ -1,23 +1,6 @@
 // lib/registration/payment-types.ts
 // API response shapes and the checkout-order guard for the payment flow.
 
-/** Endpoint that stores a foreign-remittance bank reference against a registration.
- *  TODO: confirm this route exists on the backend; the name is assumed. */
-export const BANK_REFERENCE_ENDPOINT = '/api/payments/bank-reference';
-
-/**
- * Placeholder bank details for the bank-transfer route.
- * TODO: replace every value with the committee's confirmed details before go-live.
- */
-export const BANK_DETAILS = {
-    accountName: 'TO BE CONFIRMED',
-    bankName: 'TO BE CONFIRMED',
-    branch: 'TO BE CONFIRMED',
-    accountNumber: 'TO BE CONFIRMED',
-    ifsc: 'TO BE CONFIRMED',
-    swiftCode: 'TO BE CONFIRMED',
-} as const;
-
 export interface SaveRegistrationResponse {
     error?: string;
     id?: string;

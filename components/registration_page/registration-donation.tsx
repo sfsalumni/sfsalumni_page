@@ -1,12 +1,13 @@
-// components/registration_page/registration-donation.tsx
-// Donation choice and payment route. The amount due shown is `displayMoney`: the saved figure, or a
-// live preview while the form has edits. The bank reference is controlled by the page, so
-// "Save changes" on the form also stores an edited reference. "Save reference" stays as a shortcut.
+// Donation choice and payment route. Bank / UPI opens OfflinePayModal after the registration is saved.
 
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { formatCostForDisplay } from '@/lib/registration/registration';
-import { approximateInCurrency, type DisplayCurrency, type ExchangeRateState } from '@/lib/registration/currency';
-import { BANK_DETAILS } from '@/lib/registration/payment-types';
+import AmountWithFx from '@/components/amount-with-fx';
+import OfflinePayModal from '@/components/offline-pay-modal';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import {
+    pendingProofDisplay,
+    verificationStatusLabel,
+} from '@/lib/payments/offline-proof';
 import {
     DONATION_MAX_RUPEES,
     DONATION_MIN_RUPEES,
@@ -16,8 +17,6 @@ import {
     type FormData,
     type RegistrationMoney,
 } from '@/lib/registration/types';
-
-export type PaymentRoute = 'portal' | 'bank';
 
 const INPUT_CLASS =
     'px-4 py-3 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:opacity-50';
@@ -30,14 +29,13 @@ export interface DonationSectionProps {
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
-    paymentRoute: PaymentRoute;
-    setPaymentRoute: (route: PaymentRoute) => void;
-    /** Bank reference as the user is editing it, owned by the page. */
-    bankReferenceDraft: string;
-    setBankReferenceDraft: (value: string) => void;
-    onSaveBankReference: (reference: string) => Promise<string | null>;
-    displayCurrency: DisplayCurrency;
-    exchange: ExchangeRateState;
+    verificationPending: boolean;
+    bankAccount: BankAccountPublic | null;
+    /** Ensures the registration is saved; returns registration id or an error message. */
+    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
+    savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
+    onOfflineSubmitted: (message: string, utr?: string) => void;
 }
 
 export function DonationSection({
@@ -48,13 +46,12 @@ export function DonationSection({
     displayMoney,
     formDirty,
     donationLocked,
-    paymentRoute,
-    setPaymentRoute,
-    bankReferenceDraft,
-    setBankReferenceDraft,
-    onSaveBankReference,
-    displayCurrency,
-    exchange,
+    verificationPending,
+    bankAccount,
+    onPrepareOfflinePay,
+    savedBankReference,
+    pendingProof,
+    onOfflineSubmitted,
 }: DonationSectionProps) {
     const validationError = donationValidationError(formData);
 
@@ -63,7 +60,6 @@ export function DonationSection({
     }
 
     function enterCustomAmount(raw: string) {
-        // Digits only: negatives and decimals cannot be typed.
         setFormData({
             ...formData,
             donation_option: 'custom',
@@ -78,9 +74,14 @@ export function DonationSection({
                 <p className="text-body-sm text-on-surface-variant mt-1">Additional INR donation to fund the event:</p>
             </div>
 
-            {donationLocked && (
+            {donationLocked && !verificationPending && (
                 <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
                     Your donation is paid. To change it, contact the committee.
+                </p>
+            )}
+            {verificationPending && (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    Donation is locked while Bank / UPI verification is pending.
                 </p>
             )}
 
@@ -125,44 +126,22 @@ export function DonationSection({
             )}
 
             <div className="space-y-3">
-                <p className="text-label-md text-primary uppercase tracking-wider">How would you like to pay?</p>
-                <label className="flex items-center gap-3">
-                    <input
-                        type="radio"
-                        name="payment_route"
-                        checked={paymentRoute === 'portal'}
-                        onChange={() => setPaymentRoute('portal')}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                    />
-                    <span className="text-body-sm text-on-surface">Pay through this portal</span>
-                </label>
-                <label className="flex items-center gap-3">
-                    <input
-                        type="radio"
-                        name="payment_route"
-                        checked={paymentRoute === 'bank'}
-                        onChange={() => setPaymentRoute('bank')}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                    />
-                    <span className="text-body-sm text-on-surface">
-                        Direct bank transfer (recommended for remittances from abroad)
-                    </span>
-                </label>
-            </div>
-
-            {paymentRoute === 'bank' && (
+                <p className="text-label-md text-primary uppercase tracking-wider">Payment</p>
+                <p className="text-body-sm text-on-surface-variant">
+                    Pay by Bank / UPI transfer. The committee marks you paid after verifying the remittance.
+                </p>
                 <BankTransferSection
                     amountDuePaise={displayMoney.totalDuePaise}
                     formDirty={formDirty}
                     busy={busy}
                     paymentStatus={money.paymentStatus}
-                    bankReferenceDraft={bankReferenceDraft}
-                    setBankReferenceDraft={setBankReferenceDraft}
-                    onSaveBankReference={onSaveBankReference}
-                    displayCurrency={displayCurrency}
-                    exchange={exchange}
+                    bankAccount={bankAccount}
+                    onPrepareOfflinePay={onPrepareOfflinePay}
+                    savedBankReference={savedBankReference}
+                    pendingProof={pendingProof}
+                    onOfflineSubmitted={onOfflineSubmitted}
                 />
-            )}
+            </div>
         </section>
     );
 }
@@ -172,11 +151,11 @@ interface BankTransferSectionProps {
     formDirty: boolean;
     busy: boolean;
     paymentStatus: string | null;
-    bankReferenceDraft: string;
-    setBankReferenceDraft: (value: string) => void;
-    onSaveBankReference: (reference: string) => Promise<string | null>;
-    displayCurrency: DisplayCurrency;
-    exchange: ExchangeRateState;
+    bankAccount: BankAccountPublic | null;
+    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
+    savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
+    onOfflineSubmitted: (message: string, utr?: string) => void;
 }
 
 function BankTransferSection({
@@ -184,136 +163,128 @@ function BankTransferSection({
     formDirty,
     busy,
     paymentStatus,
-    bankReferenceDraft,
-    setBankReferenceDraft,
-    onSaveBankReference,
-    displayCurrency,
-    exchange,
+    bankAccount,
+    onPrepareOfflinePay,
+    savedBankReference,
+    pendingProof,
+    onOfflineSubmitted,
 }: BankTransferSectionProps) {
-    const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState('');
+    const [open, setOpen] = useState(false);
+    const [registrationId, setRegistrationId] = useState('');
+    const [preparing, setPreparing] = useState(false);
     const [error, setError] = useState('');
 
-    const canSave = bankReferenceDraft.trim().length > 0 && !saving && !busy;
-    const approxDue = approximateInCurrency(amountDuePaise, displayCurrency, exchange);
-
-    async function handleSaveReference() {
-        if (!canSave) return;
-        setSaving(true);
+    async function openPayModal() {
+        if (preparing || busy) return;
+        setPreparing(true);
         setError('');
-        setMessage('');
-        const saveError = await onSaveBankReference(bankReferenceDraft.trim());
-        setSaving(false);
-        if (saveError) {
-            setError(saveError);
+        const result = await onPrepareOfflinePay();
+        setPreparing(false);
+        if ('error' in result) {
+            setError(result.error);
             return;
         }
-        setMessage(formDirty ? 'Form saved and bank reference stored.' : 'Bank reference saved.');
+        if (!bankAccount) {
+            setError('Bank details are not configured yet. Contact the committee.');
+            return;
+        }
+        setRegistrationId(result.registrationId);
+        setOpen(true);
     }
-
     if (amountDuePaise <= 0) {
         return <p className="text-body-sm text-on-surface-variant">Nothing is due for bank transfer right now.</p>;
     }
 
     return (
-        <div className="rounded-lg border border-outline-variant p-5 space-y-6">
-            <div className="text-body-sm text-on-surface">
-                <p>
-                    Amount to remit:{' '}
-                    <span className="font-semibold tabular-nums">{formatCostForDisplay(amountDuePaise)}</span> (INR)
-                    {formDirty ? ' · preview, saved when you save the reference' : ''}.
+        <div className="rounded-lg border border-outline-variant p-5 space-y-4">
+            <div className="space-y-2">
+                <p className="text-body-sm text-on-surface">
+                    Amount to pay
+                    {formDirty ? ' · preview, saved when you open bank / UPI details' : ''}:
                 </p>
-                {approxDue && (
-                    <p className="text-on-surface-variant">
-                        ≈ {approxDue} {displayCurrency} at the approximate reference rate. Your bank applies its own rate.
-                    </p>
-                )}
-            </div>
-
-            <div>
-                <p className="text-label-md text-primary uppercase tracking-wider mb-2">Bank details</p>
-                <dl className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-x-4 gap-y-2 text-body-sm">
-                    <dt className="text-on-surface-variant">Account name</dt>
-                    <dd className="text-on-surface">{BANK_DETAILS.accountName}</dd>
-                    <dt className="text-on-surface-variant">Bank</dt>
-                    <dd className="text-on-surface">{BANK_DETAILS.bankName}</dd>
-                    <dt className="text-on-surface-variant">Branch</dt>
-                    <dd className="text-on-surface">{BANK_DETAILS.branch}</dd>
-                    <dt className="text-on-surface-variant">Account number</dt>
-                    <dd className="text-on-surface tabular-nums">{BANK_DETAILS.accountNumber}</dd>
-                    <dt className="text-on-surface-variant">IFSC code</dt>
-                    <dd className="text-on-surface tabular-nums">{BANK_DETAILS.ifsc}</dd>
-                    <dt className="text-on-surface-variant">SWIFT code</dt>
-                    <dd className="text-on-surface tabular-nums">{BANK_DETAILS.swiftCode}</dd>
-                </dl>
-            </div>
-
-            <div className="rounded-lg bg-surface-container-low px-4 py-4 text-body-sm text-on-surface space-y-2">
-                <p className="font-semibold text-primary">Before you send the remittance, include these details:</p>
-                <ul className="list-disc pl-5 space-y-1 text-on-surface-variant">
-                    <li>Your full name, as registered on this portal</li>
-                    <li>Your registration email and phone number</li>
-                    <li>The amount sent (INR {formatCostForDisplay(amountDuePaise).replace(/^₹\s?/, '')})</li>
-                    <li>Purpose: Golden Jubilee registration and donation</li>
-                    <li>Your sender bank name, branch, and account number</li>
-                </ul>
-                <p className="text-on-surface-variant">
-                    Enter the transaction reference or UTR number you receive from your bank in the box below. Then save.
-                </p>
-            </div>
-
-            <ol className="text-body-sm text-on-surface-variant list-decimal pl-5 space-y-1">
-                <li>Make the foreign remittance first, using the details above.</li>
-                <li>Enter your bank payment reference below and save.</li>
-            </ol>
-
-            <div className="flex flex-col gap-3">
-                <label htmlFor="bank_reference" className="text-label-md text-primary uppercase tracking-wider">
-                    Bank reference
-                </label>
-                <textarea
-                    id="bank_reference"
-                    value={bankReferenceDraft}
-                    onChange={(e) => setBankReferenceDraft(e.target.value)}
-                    placeholder="Paste the UTR / transaction reference, and any other remittance details your bank gives you"
-                    rows={5}
-                    disabled={busy || saving}
-                    className={`w-full min-h-[10rem] resize-y leading-relaxed ${INPUT_CLASS}`}
+                <AmountWithFx
+                    paise={amountDuePaise}
+                    primaryClassName="text-headline-sm text-jubilee-gold-deep tabular-nums"
                 />
-                <p className="text-label-sm text-on-surface-variant">
-                    Changes here are stored when you press Save changes below, or use the button here.
-                </p>
-                <div className="flex justify-end">
-                    <button
-                        type="button"
-                        onClick={() => void handleSaveReference()}
-                        disabled={!canSave}
-                        className="px-8 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
-                    >
-                        {saving ? 'Saving…' : 'Save reference'}
-                    </button>
-                </div>
-                {message && !error && (
-                    <p role="status" className="text-body-sm text-on-secondary-fixed-variant">
-                        {message}
-                    </p>
-                )}
-                {error && (
-                    <p role="alert" className="text-body-sm text-error">
-                        {error}
-                    </p>
-                )}
             </div>
+
+            {pendingProof ? (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    {pendingProofDisplay({
+                        utr: pendingProof.utr,
+                        screenshot_path: pendingProof.hasScreenshot ? 'on-file' : null,
+                    }).label}
+                </p>
+            ) : savedBankReference ? (
+                <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface">
+                    {savedBankReference}
+                </p>
+            ) : null}
+
+            <button
+                type="button"
+                onClick={() => void openPayModal()}
+                disabled={busy || preparing || !bankAccount}
+                className="w-full sm:w-auto px-8 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+                {preparing
+                    ? 'Preparing…'
+                    : pendingProof
+                      ? 'View Bank / UPI proof'
+                      : 'Bank / UPI transfer'}
+            </button>
+
+            {!bankAccount && (
+                <p className="text-body-sm text-on-surface-variant">
+                    Bank details are not available yet. Contact the committee.
+                </p>
+            )}
+
+            {error && (
+                <p role="alert" className="text-body-sm text-error">
+                    {error}
+                </p>
+            )}
 
             <div className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface-variant space-y-2">
                 <p>
-                    Payments are reconciled with the bank remittance and shown as paid once it is confirmed. Please check back
+                    Payments are reconciled with the bank remittance and shown as paid once confirmed. Please check back
                     in 3–5 business days.
                 </p>
                 <p>
-                    Current status: <span className="font-semibold text-on-surface">{paymentStatus || 'pending'}</span>
+                    Verification status:{' '}
+                    <span className="font-semibold text-on-surface">
+                        {verificationStatusLabel({
+                            paymentStatus,
+                            pendingProof: Boolean(pendingProof),
+                            bankReference: savedBankReference,
+                        })}
+                    </span>
                 </p>
             </div>
-        </div>
+
+            {bankAccount && registrationId ? (
+                <OfflinePayModal
+                    open={open}
+                    onClose={() => setOpen(false)}
+                    account={bankAccount}
+                    amountPaise={amountDuePaise}
+                    note="Golden Jubilee registration"
+                    source={{ type: 'registration', registrationId }}
+                    existingProof={
+                        pendingProof
+                            ? {
+                                  utr: pendingProof.utr,
+                                  hasScreenshot: pendingProof.hasScreenshot,
+                                  status: 'pending',
+                              }
+                            : null
+                    }
+                    onSubmitted={(message) => {
+                        onOfflineSubmitted(message);
+                        setOpen(false);
+                    }}
+                />
+            ) : null}        </div>
     );
 }

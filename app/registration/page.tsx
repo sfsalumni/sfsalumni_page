@@ -3,8 +3,7 @@
 // Name, email and phone come from the signed-in alumni account (alumni_accounts), not from this form.
 // When the committee has verified a registration, the server reports committee_confirmed and the
 // page shows the confirmed state with the registration code, and no payment is asked for.
-// Save changes also stores an edited bank reference. Pay saves the form first, then pays.
-// On reopen, a saved bank reference restores the bank-transfer route so the user lands where they left off.
+// Bank / UPI proof is submitted via OfflinePayModal (UTR and/or screenshot).
 // Parking: a yes/no plus 2-wheeler and 4-wheeler counts. Total vehicles may not exceed guests + 1.
 
 'use client';
@@ -30,7 +29,6 @@ import {
     type RegistrationPrefill,
     type RegistrationProfileSnapshot,
 } from '@/lib/events/existing-registration';
-import { openRazorpayCheckout } from '@/lib/payments/checkout-client';
 import {
     AdminNoticeScreen,
     ChooseEventScreen,
@@ -44,14 +42,9 @@ import {
     type RegistrationFormMode,
 } from '@/components/registration_page/registration-form';
 import { RegistrationSuccess } from '@/components/registration_page/registration-success';
-import type { PaymentRoute } from '@/components/registration_page/registration-donation';
 import { previewMoney } from '@/lib/registration/preview';
-import {
-    BANK_REFERENCE_ENDPOINT,
-    toCheckoutOrder,
-    type OrderApiResponse,
-    type VerifyResponse,
-} from '@/lib/registration/payment-types';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
+import { pendingProofDisplay } from '@/lib/payments/offline-proof';
 import {
     choicesFingerprint,
     donationFormFromPaise,
@@ -59,7 +52,6 @@ import {
     donationValidationError,
     EMPTY_FORM,
     EMPTY_MONEY,
-    firstRowOf,
     moneyFromRegistration,
     parsePreRegistrationRow,
     type AuthProfile,
@@ -70,12 +62,15 @@ import {
     type RegistrationUser,
 } from '@/lib/registration/types';
 
+type PendingProofState = { utr: string | null; hasScreenshot: boolean };
+
 /** A saved registration as the server reports it right now. */
 interface LoadedRegistration {
     id: string;
     money: RegistrationMoney;
     committeeConfirmed: boolean;
     bankReference: string;
+    pendingProof: PendingProofState | null;
 }
 
 function formFromPrefill(prefill: RegistrationPrefill): FormData {
@@ -179,6 +174,7 @@ function RegistrationPageInner() {
     const [currentStep, setCurrentStep] = useState<RegistrationStep>('phone');
     const [error, setError] = useState('');
     const [preRegData, setPreRegData] = useState<PreRegistrationData | null>(null);
+    const [preRegCandidates, setPreRegCandidates] = useState<PreRegistrationData[]>([]);
     /** Name, email and phone from the alumni account. Never typed on this form. */
     const [accountContact, setAccountContact] = useState<AccountContact | null>(null);
     const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
@@ -186,15 +182,13 @@ function RegistrationPageInner() {
     const [money, setMoney] = useState<RegistrationMoney>(EMPTY_MONEY);
     const [committeeConfirmed, setCommitteeConfirmed] = useState(false);
     const [registrationId, setRegistrationId] = useState<string | null>(null);
-    /** Bank reference as the database last returned it. Used to tell whether the draft has changed. */
+    /** Bank / UPI reference as last submitted for verification. */
     const [savedBankReference, setSavedBankReference] = useState('');
-    /** Bank reference as the user is editing it. Saved together with the form. */
-    const [bankReferenceDraft, setBankReferenceDraft] = useState('');
+    const [pendingProof, setPendingProof] = useState<PendingProofState | null>(null);
+    const [bankAccount, setBankAccount] = useState<BankAccountPublic | null>(null);
     /** Fingerprint of the choices as last saved. Differs from the form when edits are unsaved. */
     const [savedFingerprint, setSavedFingerprint] = useState('');
-    const [paymentRoute, setPaymentRoute] = useState<PaymentRoute>('portal');
     const [saving, setSaving] = useState(false);
-    const [paying, setPaying] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const [event, setEvent] = useState<EventCatalog | null>(null);
     const [choices, setChoices] = useState<EventCatalog[]>([]);
@@ -251,47 +245,76 @@ function RegistrationPageInner() {
         void loadEvent();
     }, [searchParams]);
 
-    async function prefillFromPreRegistration(phoneNumber: string, email: string) {
-        if (!phoneNumber || !email) return;
+    function applyRosterPrefill(match: PreRegistrationData) {
+        const loc = parseLocation(match.current_location || '');
+        const hasParking = match.has_parking === true;
+        setFormData((prev) => ({
+            ...prev,
+            batch: match.batch ?? prev.batch,
+            section: match.section || prev.section,
+            city: loc.city || prev.city,
+            country: loc.country || prev.country,
+            food_preference: match.food_preference ?? prev.food_preference,
+            number_of_guests:
+                typeof match.number_of_guests === 'number' ? match.number_of_guests : prev.number_of_guests,
+            guests_eating:
+                typeof match.guests_eating === 'number' ? match.guests_eating : prev.guests_eating,
+            attending: typeof match.attending === 'boolean' ? match.attending : prev.attending,
+            has_parking: typeof match.has_parking === 'boolean' ? hasParking : prev.has_parking,
+            two_wheeler_count: hasParking
+                ? typeof match.two_wheeler_count === 'number'
+                    ? match.two_wheeler_count
+                    : prev.two_wheeler_count
+                : 0,
+            four_wheeler_count: hasParking
+                ? typeof match.four_wheeler_count === 'number'
+                    ? match.four_wheeler_count
+                    : prev.four_wheeler_count
+                : 0,
+        }));
+        setPreRegData(match);
+        setPreRegCandidates([]);
+        setCurrentStep('details');
+    }
 
+    async function prefillFromMemberRoster(
+        phoneNumber: string,
+        email: string,
+        fullName?: string
+    ): Promise<RegistrationStep> {
         try {
-            const normalized = normalizePhoneNumber(phoneNumber);
-            if (!normalized) return;
+            const params = new URLSearchParams();
+            if (phoneNumber) params.set('phone', phoneNumber);
+            if (email) params.set('email', email);
+            if (fullName) params.set('name', fullName);
+            if (![...params.keys()].length) return 'details';
 
-            const { data, error: rpcError } = await supabase.rpc('find_pre_registration', {
-                input_phone: normalized,
-                input_email: email,
+            const res = await fetch(`/api/registration/roster-lookup?${params.toString()}`, {
+                cache: 'no-store',
             });
+            if (!res.ok) return 'details';
 
-            if (rpcError) {
-                console.error('Prefill lookup error:', rpcError);
-                return;
+            const payload = (await res.json().catch(() => ({}))) as {
+                kind?: string;
+                auto?: boolean;
+                matches?: unknown[];
+            };
+            const matches = (payload.matches || [])
+                .map((row) => parsePreRegistrationRow(row))
+                .filter((row): row is PreRegistrationData => row != null);
+            if (!matches.length) return 'details';
+
+            if (payload.auto || (payload.kind === 'exact' && matches.length === 1)) {
+                applyRosterPrefill(matches[0]);
+                return 'details';
             }
 
-            const match = parsePreRegistrationRow(firstRowOf(data));
-            if (!match) return;
-
-            // Phone-only match: ask for confirmation first.
-            if (match.match_type === 'phone_only') {
-                setPreRegData(match);
-                setCurrentStep('confirm_prefill');
-                return;
-            }
-
-            // Exact match: auto-prefill the fields this form still asks for.
-            const loc = parseLocation(match.current_location || '');
-            setFormData((prev) => ({
-                ...prev,
-                batch: match.batch || prev.batch,
-                section: match.section || prev.section,
-                city: loc.city || prev.city,
-                country: loc.country || prev.country,
-                food_preference: match.food_preference ?? prev.food_preference,
-            }));
-            setPreRegData(match);
-            setCurrentStep('details');
+            setPreRegData(matches[0]);
+            setPreRegCandidates(matches);
+            return 'confirm_prefill';
         } catch (err) {
             console.error('Prefill error:', err);
+            return 'details';
         }
     }
 
@@ -331,8 +354,12 @@ function RegistrationPageInner() {
                     country: loc.country,
                 }));
 
-                await prefillFromPreRegistration(contact.phone_number, contact.email);
-                setCurrentStep('details');
+                const rosterStep = await prefillFromMemberRoster(
+                    contact.phone_number,
+                    contact.email,
+                    contact.full_name
+                );
+                setCurrentStep(rosterStep);
             } catch {
                 setCurrentStep('phone');
             } finally {
@@ -369,7 +396,7 @@ function RegistrationPageInner() {
             setMoney(EMPTY_MONEY);
             setCommitteeConfirmed(false);
             setSavedBankReference('');
-            setBankReferenceDraft('');
+            setPendingProof(null);
             return null;
         }
 
@@ -377,10 +404,29 @@ function RegistrationPageInner() {
         const next = moneyFromRegistration(reg);
         const confirmed = reg.committee_confirmed === true;
         const bankReference = typeof reg.bank_reference === 'string' ? reg.bank_reference : '';
+        const rawProof = reg.pending_offline_proof;
+        const nextPending: PendingProofState | null =
+            rawProof && typeof rawProof === 'object'
+                ? {
+                      utr:
+                          typeof (rawProof as { utr?: unknown }).utr === 'string'
+                              ? ((rawProof as { utr: string }).utr)
+                              : null,
+                      hasScreenshot: Boolean((rawProof as { has_screenshot?: unknown }).has_screenshot),
+                  }
+                : null;
         setRegistrationId(id || null);
         setMoney(next);
         setCommitteeConfirmed(confirmed);
-        setSavedBankReference(bankReference);
+        setSavedBankReference(
+            nextPending
+                ? pendingProofDisplay({
+                      utr: nextPending.utr,
+                      screenshot_path: nextPending.hasScreenshot ? 'on-file' : null,
+                  }).label
+                : bankReference
+        );
+        setPendingProof(nextPending);
         setHasSavedReg(true);
 
         if (applyToForm) {
@@ -391,18 +437,19 @@ function RegistrationPageInner() {
             const nextForm = formFromPrefill(prefill);
             setFormData(nextForm);
             setSavedFingerprint(choicesFingerprint(nextForm));
-            // Show the saved reference in the box, and keep the bank route if one was saved.
-            setBankReferenceDraft(bankReference);
-            if (bankReference) {
-                setPaymentRoute('bank');
-            }
         }
 
         // Confirmed by the committee, or fully paid: the success screen with the code.
         if (confirmed || (next.paymentStatus === 'paid' && next.totalDuePaise === 0)) {
             setCurrentStep('success');
         }
-        return { id, money: next, committeeConfirmed: confirmed, bankReference };
+        return {
+            id,
+            money: next,
+            committeeConfirmed: confirmed,
+            bankReference,
+            pendingProof: nextPending,
+        };
     }
 
     useEffect(() => {
@@ -411,6 +458,29 @@ function RegistrationPageInner() {
         // Runs once per user and event. loadSavedRegistration reads no changing state.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, event?.id, gate]);
+
+    useEffect(() => {
+        if (!user?.id || gate !== 'ok') {
+            setBankAccount(null);
+            return;
+        }
+        let cancel = false;
+        void (async () => {
+            try {
+                const res = await fetch('/api/payments/bank-details', { cache: 'no-store' });
+                const payload = (await res.json().catch(() => ({}))) as {
+                    account?: BankAccountPublic;
+                };
+                if (cancel) return;
+                setBankAccount(res.ok && payload.account ? payload.account : null);
+            } catch {
+                if (!cancel) setBankAccount(null);
+            }
+        })();
+        return () => {
+            cancel = true;
+        };
+    }, [user?.id, gate]);
 
     /**
      * Checks the form fields and the account contact. Returns the account's phone in E.164 for saving.
@@ -479,31 +549,12 @@ function RegistrationPageInner() {
         return { ok: true, e164 };
     }
 
-    /** Stores the bank reference on a saved registration. Returns an error message, or null on success. */
-    async function postBankReference(regId: string, reference: string): Promise<string | null> {
-        try {
-            const res = await fetch(BANK_REFERENCE_ENDPOINT, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ registrationId: regId, bank_reference: reference }),
-            });
-            if (!res.ok) {
-                const payload = (await res.json().catch(() => ({}))) as { error?: string };
-                return payload.error || 'Could not save the bank reference. Please try again.';
-            }
-            return null;
-        } catch {
-            return 'Could not save the bank reference. Please try again.';
-        }
-    }
-
     /**
-     * Writes the form to the database, stores the bank reference if it changed, then reloads the
-     * saved amounts. Never opens checkout.
+     * Writes the form to the database, then reloads the saved amounts. Never opens checkout.
      */
     async function saveRegistration(e?: FormEvent): Promise<LoadedRegistration | null> {
         e?.preventDefault();
-        if (!user || saving || paying || !event) return null;
+        if (!user || saving || !event) return null;
 
         setSaving(true);
         setError('');
@@ -557,21 +608,6 @@ function RegistrationPageInner() {
                 return null;
             }
 
-            // Store the bank reference too, but only when the bank route is in use and the text changed.
-            const draft = bankReferenceDraft.trim();
-            const referenceChanged = draft !== (loaded.bankReference || '').trim();
-            if (paymentRoute === 'bank' && draft && referenceChanged) {
-                const refError = await postBankReference(loaded.id, draft);
-                if (refError) {
-                    setError(`Registration saved, but ${refError.charAt(0).toLowerCase()}${refError.slice(1)}`);
-                    setSavedFingerprint(choicesFingerprint(formData));
-                    setSaving(false);
-                    return null;
-                }
-                setSavedBankReference(draft);
-                loaded.bankReference = draft;
-            }
-
             setSavedFingerprint(choicesFingerprint(formData));
             setSaveMessage(
                 loaded.money.totalDuePaise > 0
@@ -587,160 +623,53 @@ function RegistrationPageInner() {
         }
     }
 
-    /** Pays the saved registration's total (fee plus donation) in one Razorpay order. */
-    async function payDue(regId: string) {
-        if (!user || paying || !event?.id || !accountContact) return;
-        const eventId = event.id;
-
-        setError('');
-        setSaveMessage('');
-        setPaying(true);
-
-        try {
-            const orderRes = await fetch('/api/payments/create-order', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ registrationId: regId }),
-            });
-            const orderPayload = (await orderRes.json().catch(() => ({}))) as OrderApiResponse & {
-                skipCheckout?: boolean;
-            };
-
-            if (orderRes.status === 503 || orderPayload.configured === false) {
-                setError(
-                    orderPayload.error ||
-                        'Payments are not configured yet. Your registration is already saved. The committee can mark payment, or try again after Razorpay keys are added.'
-                );
-                setPaying(false);
-                return;
-            }
-
-            if (!orderRes.ok) {
-                setError(orderPayload.error || 'Could not start payment. Your registration is still saved.');
-                setPaying(false);
-                return;
-            }
-
-            // Nothing owed online: the server settled it, so reload the saved amounts.
-            if (orderPayload.skipCheckout) {
-                await loadSavedRegistration(eventId, false);
-                setPaying(false);
-                return;
-            }
-
-            const checkoutOrder = toCheckoutOrder(orderPayload, {
-                name: accountContact.full_name,
-                email: accountContact.email,
-                contact: normalizePhoneNumber(accountContact.phone_number) || accountContact.phone_number,
-            });
-            if (!checkoutOrder) {
-                setError('Payment could not be started. Your registration is still saved.');
-                setPaying(false);
-                return;
-            }
-
-            const checkoutResult = await openRazorpayCheckout(checkoutOrder);
-
-            if (!checkoutResult) {
-                setError('Payment cancelled. Your registration is saved. Tap Pay to try again.');
-                setPaying(false);
-                return;
-            }
-
-            if ('failed' in checkoutResult) {
-                setError(`${checkoutResult.message} Your registration is still saved.`);
-                setPaying(false);
-                return;
-            }
-
-            const verifyRes = await fetch('/api/payments/verify', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                    registrationId: regId,
-                    razorpay_order_id: checkoutResult.razorpay_order_id,
-                    razorpay_payment_id: checkoutResult.razorpay_payment_id,
-                    razorpay_signature: checkoutResult.razorpay_signature,
-                }),
-            });
-            const verifyPayload = (await verifyRes.json().catch(() => ({}))) as VerifyResponse;
-            if (!verifyRes.ok) {
-                setError(
-                    (verifyPayload.error || 'Payment could not be verified') + ' Your registration is still saved.'
-                );
-                setPaying(false);
-                return;
-            }
-
-            const after = await loadSavedRegistration(eventId, false);
-            if (after && after.money.totalDuePaise > 0) {
-                setSaveMessage(`Payment received. ${formatCostForDisplay(after.money.totalDuePaise)} still due.`);
-            }
-            setPaying(false);
-        } catch {
-            setError('Payment failed. Your registration is still saved. Tap Pay to try again.');
-            setPaying(false);
-        }
-    }
-
-    /** Pay button: save the form first, then pay what the saved registration says is due. */
-    async function payNow() {
-        const loaded = await saveRegistration();
-        if (!loaded) return;
-        if (loaded.committeeConfirmed) return;
-        if (loaded.money.totalDuePaise > 0) await payDue(loaded.id);
-    }
-
-    /** Success screen button: same as Pay. */
+    /** Saves party-size edits from the success screen (no online checkout). */
     async function savePartySize() {
-        await payNow();
+        await saveRegistration();
     }
 
-    /**
-     * "Save reference" button in the bank section. Saves the form first if it has unsaved edits,
-     * then stores the reference. Returns an error message, or null on success.
-     */
-    async function saveBankReference(reference: string): Promise<string | null> {
-        setBankReferenceDraft(reference);
+    /** Saves the form if needed, then returns the registration id for the offline pay modal. */
+    async function prepareOfflinePay(): Promise<{ registrationId: string } | { error: string }> {
         let regId = registrationId;
+        if (pendingProof) {
+            if (!regId) return { error: 'Could not find your registration. Please try again.' };
+            return { registrationId: regId };
+        }
         if (formDirty || !regId) {
             const loaded = await saveRegistration();
-            if (!loaded) return 'Fix the errors on the form, then save the reference again.';
+            if (!loaded) return { error: 'Fix the errors on the form, then try again.' };
             regId = loaded.id;
         }
-        if (!regId) return 'Could not find your registration. Please try again.';
+        if (!regId) return { error: 'Could not find your registration. Please try again.' };
+        return { registrationId: regId };
+    }
 
-        const refError = await postBankReference(regId, reference.trim());
-        if (refError) return refError;
-        setSavedBankReference(reference.trim());
-        return null;
+    async function handleOfflineSubmitted(message: string) {
+        setSaveMessage(message);
+        setError('');
+        if (event?.id) {
+            await loadSavedRegistration(event.id, false);
+            return;
+        }
+        setSavedBankReference('Pending committee review');
     }
 
     function acceptPreRegistration(match: PreRegistrationData) {
-        const loc = parseLocation(match.current_location || '');
-        setFormData((prev) => ({
-            ...prev,
-            batch: match.batch,
-            section: match.section || '',
-            city: loc.city,
-            country: loc.country,
-            food_preference: match.food_preference ?? 'veg',
-        }));
-        setCurrentStep('details');
+        applyRosterPrefill(match);
     }
 
     function dismissPreRegistration() {
         setPreRegData(null);
+        setPreRegCandidates([]);
         setCurrentStep('details');
     }
 
-    const referenceDirty = bankReferenceDraft.trim() !== savedBankReference.trim();
-    const formDirty =
-        (!savedFingerprint || choicesFingerprint(formData) !== savedFingerprint) || (paymentRoute === 'bank' && referenceDirty);
+    const formDirty = !savedFingerprint || choicesFingerprint(formData) !== savedFingerprint;
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
-    const busy = saving || paying;
+    const verificationPending = Boolean(pendingProof);
+    const busy = saving;
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
             ? 'pay'
@@ -770,7 +699,8 @@ function RegistrationPageInner() {
         return (
             <ConfirmPrefillScreen
                 preRegData={preRegData}
-                onAccept={() => acceptPreRegistration(preRegData)}
+                candidates={preRegCandidates}
+                onAccept={acceptPreRegistration}
                 onReject={dismissPreRegistration}
             />
         );
@@ -787,23 +717,23 @@ function RegistrationPageInner() {
                 hasSavedReg={hasSavedReg}
                 busy={busy}
                 saving={saving}
-                paying={paying}
                 money={money}
                 displayMoney={displayMoney}
                 formDirty={formDirty}
                 donationLocked={donationLocked}
-                paymentRoute={paymentRoute}
-                setPaymentRoute={setPaymentRoute}
-                bankReferenceDraft={bankReferenceDraft}
-                setBankReferenceDraft={setBankReferenceDraft}
+                verificationPending={verificationPending}
+                bankAccount={bankAccount}
+                onPrepareOfflinePay={prepareOfflinePay}
                 savedBankReference={savedBankReference}
+                pendingProof={pendingProof}
+                onOfflineSubmitted={(message) => {
+                    void handleOfflineSubmitted(message);
+                }}
                 saveMessage={saveMessage}
                 error={error}
-                onSaveBankReference={saveBankReference}
                 onSubmit={(e) => {
                     void saveRegistration(e);
                 }}
-                onPayNow={() => void payNow()}
             />
         );
     }

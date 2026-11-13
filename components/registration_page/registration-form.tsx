@@ -1,17 +1,14 @@
 // components/registration_page/registration-form.tsx
 // The details form. Holds no save or payment logic: values and handlers come from the page.
 // Name, email and phone come from the alumni account and are shown read-only, not typed here.
-// Amounts shown are `displayMoney` (saved, or a live preview while edited). The Pay button is
-// hidden when the bank-transfer route is selected.
+// Amounts shown are `displayMoney` (saved, or a live preview while edited).
+// Payment is Bank / UPI only (offline proof).
 // Parking: total vehicles (2-wheelers + 4-wheelers) cannot exceed guests + 1 (the alumnus).
 
 import { useState, type Dispatch, type FormEvent, type SetStateAction, type KeyboardEvent } from 'react';
 import BackHomeLink from '@/components/back-home-link';
 import SearchableSelect from '@/components/searchable-select';
-import {
-    DonationSection,
-    type PaymentRoute,
-} from '@/components/registration_page/registration-donation';
+import { DonationSection } from '@/components/registration_page/registration-donation';
 import { PaymentSummary } from '@/components/registration_page/registration-payment-summary';
 import {
     anyoneEating,
@@ -28,7 +25,7 @@ import {
 } from '@/lib/registration/registration';
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
-import { useInrExchangeRate, type DisplayCurrency } from '@/lib/registration/currency';
+import type { BankAccountPublic } from '@/lib/payments/bank-details';
 import {
     BATCH_OPTIONS,
     COUNTRY_OPTIONS,
@@ -56,25 +53,23 @@ export interface RegistrationFormProps {
     hasSavedReg: boolean;
     busy: boolean;
     saving: boolean;
-    paying: boolean;
     /** Saved amounts from the database. Used for the status line only. */
     money: RegistrationMoney;
     /** Amounts to show: saved, or a live preview while the form has unsaved edits. */
     displayMoney: RegistrationMoney;
     formDirty: boolean;
     donationLocked: boolean;
-    paymentRoute: PaymentRoute;
-    setPaymentRoute: (route: PaymentRoute) => void;
-    /** Bank reference as the user is editing it. Saved by Save changes when the bank route is used. */
-    bankReferenceDraft: string;
-    setBankReferenceDraft: (value: string) => void;
-    /** Bank reference as last saved. */
+    /** True while a Bank / UPI proof awaits committee review — locks guest/food/donation edits. */
+    verificationPending: boolean;
+    bankAccount: BankAccountPublic | null;
+    onPrepareOfflinePay: () => Promise<{ registrationId: string } | { error: string }>;
+    /** Bank / UPI reference last submitted for verification. */
     savedBankReference: string;
+    pendingProof: { utr: string | null; hasScreenshot: boolean } | null;
+    onOfflineSubmitted: (message: string) => void;
     saveMessage: string;
     error: string;
-    onSaveBankReference: (reference: string) => Promise<string | null>;
     onSubmit: (event: FormEvent) => void;
-    onPayNow: () => void;
 }
 
 const INPUT_CLASS =
@@ -183,28 +178,24 @@ export function RegistrationForm(props: RegistrationFormProps) {
         hasSavedReg,
         busy,
         saving,
-        paying,
         money,
         displayMoney,
         formDirty,
         donationLocked,
-        paymentRoute,
-        setPaymentRoute,
-        bankReferenceDraft,
-        setBankReferenceDraft,
+        verificationPending,
+        bankAccount,
+        onPrepareOfflinePay,
         savedBankReference,
+        pendingProof,
+        onOfflineSubmitted,
         saveMessage,
         error,
-        onSaveBankReference,
         onSubmit,
-        onPayNow,
     } = props;
-
-    const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('INR');
-    const exchange = useInrExchangeRate(displayCurrency);
 
     const isSeniorSponsored = isSeniorSponsoredBatch(formData.batch);
     const feeLabel = formatCostForDisplay(EVENT_FEE_PER_PERSON_PAISE);
+    const choicesLocked = busy || verificationPending;
 
     // Display-only: whether the food question is shown. The fee itself comes from displayMoney.
     const guestCount = clampGuestCount(formData.number_of_guests);
@@ -260,13 +251,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
         setFormData({ ...formData, four_wheeler_count: Math.min(requested, fourWheelerMax) });
     }
 
-    const payLabel =
-        paying
-            ? 'Opening payment…'
-            : displayMoney.totalDuePaise > 0
-              ? `${formDirty ? 'Save & pay' : 'Pay'} ${formatCostForDisplay(displayMoney.totalDuePaise)}`
-              : 'Nothing due';
-
     return (
         <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6 pt-20 pb-12">
             <div className="w-full max-w-3xl">
@@ -280,15 +264,23 @@ export function RegistrationForm(props: RegistrationFormProps) {
                     </h1>
                     <p className={`text-body-sm text-on-surface-variant ${hasSavedReg ? 'mb-4' : 'mb-8'}`}>
                         {hasSavedReg
-                            ? 'Change your attendance, lunch, guests, or parking anytime. Amounts update as you edit. Pay saves your changes first.'
+                            ? verificationPending
+                                ? 'Your Bank / UPI proof is pending committee review. Guest count, food choice, and donation stay locked until then.'
+                                : 'Change your attendance, lunch, guests, or parking anytime before you submit Bank / UPI proof. Amounts update as you edit.'
                             : event
                               ? `Register for ${event.title}`
-                              : 'Complete your registratione for the alumni meet'}
+                              : 'Complete your registration for the alumni meet'}
                     </p>
                     {hasSavedReg && (
                         <p className="rounded-xl border border-jubilee-gold-light bg-secondary-container/30 p-4 text-body-sm text-on-secondary-fixed-variant mb-8">
                             Saved registration loaded
-                            {money.paymentStatus ? ` · status: ${money.paymentStatus}` : ''}.
+                            {money.paymentStatus ? ` · payment: ${money.paymentStatus}` : ''}
+                            {verificationPending ? ' · verification: pending' : ''}.
+                        </p>
+                    )}
+                    {verificationPending && (
+                        <p className="rounded-lg bg-surface-container-low px-4 py-3 text-body-sm text-on-surface mb-6" role="status">
+                            Proof submitted for verification. Contact the committee if you need to change guests, food, or donation.
                         </p>
                     )}
 
@@ -301,7 +293,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     <dt className="text-on-surface-variant">Name</dt>
                                     <dd className="text-on-surface">
                                         {accountContact?.full_name || '—'}
-                                        {accountContact?.last_name ? ` ${accountContact.last_name}` : ''}
                                     </dd>
                                     <dt className="text-on-surface-variant">Email</dt>
                                     <dd className="text-on-surface break-all">{accountContact?.email || '—'}</dd>
@@ -324,7 +315,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                                         placeholder="City"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     />
                                 </div>
@@ -337,7 +328,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         onChange={(v) => setFormData({ ...formData, country: v })}
                                         placeholder="Type to search country…"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         aria-label="Country"
                                         emptyLabel="No matching country"
                                     />
@@ -353,7 +344,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         }
                                         placeholder="Type to search batch year…"
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         aria-label="Batch year"
                                         emptyLabel="No matching batch year"
                                     />
@@ -365,7 +356,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         value={formData.section}
                                         onChange={(e) => setFormData({ ...formData, section: e.target.value })}
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     >
                                         <option value="">Select section</option>
@@ -389,7 +380,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     legend="Are you going to attend?"
                                     value={formData.attending}
                                     onChange={changeAttending}
-                                    disabled={busy}
+                                    disabled={choicesLocked}
                                 />
 
                                 <div className="flex flex-col">
@@ -408,7 +399,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         value={formData.number_of_guests}
                                         onChange={(e) => changeGuestCount(e.target.value)}
                                         required
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                         className={INPUT_CLASS}
                                     />
                                 </div>
@@ -419,7 +410,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                         legend="Will you be having lunch?"
                                         value={formData.lunch}
                                         onChange={(next) => setFormData({ ...formData, lunch: next })}
-                                        disabled={busy}
+                                        disabled={choicesLocked}
                                     />
                                 )}
 
@@ -437,7 +428,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                             step={1}
                                             value={guestsEating}
                                             onChange={(e) => changeGuestsEating(e.target.value)}
-                                            disabled={busy}
+                                            disabled={choicesLocked}
                                             className={INPUT_CLASS}
                                         />
                                     </div>
@@ -452,7 +443,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                             name="food_preference"
                                             value={normalizeFoodPreference(formData.food_preference)}
                                             onChange={(next) => setFormData({ ...formData, food_preference: next })}
-                                            disabled={busy}
+                                            disabled={choicesLocked}
                                         />
                                     </div>
                                 )}
@@ -469,7 +460,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                     legend="Do you need parking?"
                                     value={formData.has_parking}
                                     onChange={changeHasParking}
-                                    disabled={busy}
+                                    disabled={choicesLocked}
                                 />
 
                                 {formData.has_parking && (
@@ -486,7 +477,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                                 step={1}
                                                 value={formData.two_wheeler_count}
                                                 onChange={(e) => changeTwoWheelerCount(e.target.value)}
-                                                disabled={busy}
+                                                disabled={choicesLocked}
                                                 className={INPUT_CLASS}
                                             />
                                         </div>
@@ -503,7 +494,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
                                                 step={1}
                                                 value={formData.four_wheeler_count}
                                                 onChange={(e) => changeFourWheelerCount(e.target.value)}
-                                                disabled={busy}
+                                                disabled={choicesLocked}
                                                 className={INPUT_CLASS}
                                             />
                                         </div>
@@ -540,14 +531,13 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             money={money}
                             displayMoney={displayMoney}
                             formDirty={formDirty}
-                            donationLocked={donationLocked}
-                            paymentRoute={paymentRoute}
-                            setPaymentRoute={setPaymentRoute}
-                            bankReferenceDraft={bankReferenceDraft}
-                            setBankReferenceDraft={setBankReferenceDraft}
-                            onSaveBankReference={onSaveBankReference}
-                            displayCurrency={displayCurrency}
-                            exchange={exchange}
+                            donationLocked={donationLocked || verificationPending}
+                            verificationPending={verificationPending}
+                            bankAccount={bankAccount}
+                            onPrepareOfflinePay={onPrepareOfflinePay}
+                            savedBankReference={savedBankReference}
+                            pendingProof={pendingProof}
+                            onOfflineSubmitted={onOfflineSubmitted}
                         />
 
                         <PaymentSummary
@@ -556,9 +546,6 @@ export function RegistrationForm(props: RegistrationFormProps) {
                             refundEmail={event?.refund_email}
                             eventTitle={event?.title || 'Event'}
                             fullName={accountContact?.full_name || ''}
-                            displayCurrency={displayCurrency}
-                            onCurrencyChange={setDisplayCurrency}
-                            exchange={exchange}
                         />
 
                         {saveMessage && !error && (
@@ -576,22 +563,17 @@ export function RegistrationForm(props: RegistrationFormProps) {
                         <div className="flex flex-col sm:flex-row gap-3">
                             <button
                                 type="submit"
-                                disabled={busy}
+                                disabled={busy || verificationPending}
                                 className="flex-1 py-3 rounded-lg bg-primary text-on-primary text-label-md uppercase tracking-wider font-bold hover:bg-navy-subtle disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
                             >
-                                {saving ? 'Saving…' : hasSavedReg ? 'Save changes' : 'Save registration'}
+                                {saving
+                                    ? 'Saving…'
+                                    : verificationPending
+                                      ? 'Locked while verification pending'
+                                      : hasSavedReg
+                                        ? 'Save changes'
+                                        : 'Save registration'}
                             </button>
-
-                            {paymentRoute === 'portal' && (
-                                <button
-                                    type="button"
-                                    onClick={onPayNow}
-                                    disabled={busy || displayMoney.totalDuePaise <= 0}
-                                    className="flex-1 py-3 rounded-lg bg-secondary-container text-on-secondary-fixed text-label-md uppercase tracking-wider font-bold hover:bg-secondary-fixed disabled:bg-surface-container disabled:text-on-surface-variant transition-all"
-                                >
-                                    {payLabel}
-                                </button>
-                            )}
                         </div>
                     </form>
 

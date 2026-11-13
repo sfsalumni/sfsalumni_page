@@ -1,19 +1,25 @@
 // app/(auth)/signup/page.tsx
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
 import PasswordInput from '@/components/password-input';
 import BackHomeLink from '@/components/back-home-link';
+import { ConfirmPrefillScreen } from '@/components/registration_page/registration-screens';
 import { isPublicEmail } from '@/lib/email';
 import {
     COUNTRY_CALLING_CODES,
     phoneInputHint,
     phoneValidationError,
+    splitE164,
     toE164,
 } from '@/lib/phone';
+import {
+    parsePreRegistrationRow,
+    type PreRegistrationData,
+} from '@/lib/registration/types';
 
 // Names allow letters from any script and spaces only. Digits, punctuation and
 // symbols are rejected so names stay clean in certificates, badges and exports.
@@ -35,6 +41,19 @@ function sanitizeUsernameInput(raw: string): string {
     return raw.replace(USERNAME_DISALLOWED_CHARS_PATTERN, '');
 }
 
+function namesFromRoster(match: PreRegistrationData): { firstName: string; lastName: string } {
+    const given = sanitizeNameInput(match.given_name || '').trim();
+    const last = sanitizeNameInput(match.last_name || '').trim();
+    if (given) return { firstName: given, lastName: last };
+    const parts = sanitizeNameInput(match.full_name || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    if (parts.length <= 1) return { firstName: parts[0] || '', lastName: last };
+    if (last) return { firstName: parts.join(' '), lastName: last };
+    return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] || '' };
+}
+
 export default function SignupPage() {
     return (
         <Suspense fallback={null}>
@@ -54,10 +73,81 @@ function SignupForm() {
     const [phoneNational, setPhoneNational] = useState('');
     const [agreeTerms, setAgreeTerms] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [lookingUp, setLookingUp] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [prefillHint, setPrefillHint] = useState('');
+    const [confirmMatch, setConfirmMatch] = useState<PreRegistrationData | null>(null);
+    const [confirmCandidates, setConfirmCandidates] = useState<PreRegistrationData[]>([]);
+    const lookupSeq = useRef(0);
     const router = useRouter();
     const searchParams = useSearchParams();
+
+    function applyRosterMatch(match: PreRegistrationData) {
+        const names = namesFromRoster(match);
+        if (names.firstName) setFirstName(names.firstName);
+        if (names.lastName) setLastName(names.lastName);
+        if (match.email && isPublicEmail(match.email) && !email.trim()) {
+            setEmail(match.email);
+        }
+        if (match.phone_number && !phoneNational.trim()) {
+            const split = splitE164(match.phone_number);
+            setPhoneIsd(split.isd);
+            setPhoneNational(split.national);
+        }
+        setPrefillHint('We filled your details from the member list. You can edit them.');
+        setConfirmMatch(null);
+        setConfirmCandidates([]);
+    }
+
+    async function lookupFromRoster() {
+        if (loading || lookingUp) return;
+        const e164 = toE164(phoneIsd, phoneNational);
+        const trimmedEmail = email.trim();
+        if (!e164 && !trimmedEmail) return;
+
+        const seq = ++lookupSeq.current;
+        setLookingUp(true);
+        setError('');
+        try {
+            const params = new URLSearchParams();
+            if (e164) params.set('phone', e164);
+            if (trimmedEmail) params.set('email', trimmedEmail);
+            const res = await fetch(`/api/registration/roster-lookup?${params.toString()}`, {
+                cache: 'no-store',
+            });
+            if (seq !== lookupSeq.current) return;
+            if (!res.ok) {
+                if (res.status !== 400) {
+                    const payload = await res.json().catch(() => ({}));
+                    if (payload.error) setPrefillHint('');
+                }
+                return;
+            }
+            const payload = (await res.json().catch(() => ({}))) as {
+                kind?: string;
+                auto?: boolean;
+                matches?: unknown[];
+            };
+            const matches = (payload.matches || [])
+                .map((row) => parsePreRegistrationRow(row))
+                .filter((row): row is PreRegistrationData => row != null);
+            if (!matches.length) {
+                setPrefillHint('');
+                return;
+            }
+            if (payload.auto || (payload.kind === 'exact' && matches.length === 1)) {
+                applyRosterMatch(matches[0]);
+                return;
+            }
+            setConfirmMatch(matches[0]);
+            setConfirmCandidates(matches);
+        } catch {
+            // Prefill is optional; signup still works without it.
+        } finally {
+            if (seq === lookupSeq.current) setLookingUp(false);
+        }
+    }
 
     async function handleSignup(e: React.FormEvent) {
         e.preventDefault();
@@ -152,6 +242,21 @@ function SignupForm() {
         }
     }
 
+    if (confirmMatch) {
+        return (
+            <ConfirmPrefillScreen
+                preRegData={confirmMatch}
+                candidates={confirmCandidates}
+                onAccept={applyRosterMatch}
+                onReject={() => {
+                    setConfirmMatch(null);
+                    setConfirmCandidates([]);
+                    setPrefillHint('');
+                }}
+            />
+        );
+    }
+
     const passwordMismatch = passwordConfirm.length > 0 && password !== passwordConfirm;
     const usernamePreview = username.trim() || email.trim() || 'your email';
     const fieldClass =
@@ -171,13 +276,97 @@ function SignupForm() {
                     </div>
                     <h1 className="text-headline-lg text-primary mb-2">Create Your Account</h1>
                     <p className="text-body-sm text-on-surface-variant">
-                        Register for the reunion and join the celebration 
+                        Register for the reunion and join the celebration
                     </p>
                 </div>
 
                 {/* Form Card */}
                 <div className="bg-surface-paper rounded-xl shadow-md p-8 border border-surface-container-low">
                     <form onSubmit={handleSignup} className="space-y-4">
+                        {/* Email first so lookup can run before names */}
+                        <div className="flex flex-col">
+                            <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="email">
+                                Email Address *
+                            </label>
+                            <input
+                                id="email"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                onBlur={() => void lookupFromRoster()}
+                                placeholder="you@gmail.com"
+                                required
+                                autoComplete="email"
+                                disabled={loading}
+                                className={fieldClass}
+                            />
+                            <p className="text-label-sm text-on-surface-variant mt-1">
+                                Public email only (Gmail, Yahoo, Outlook, iCloud, Proton, Rediffmail, AOL, Zoho).
+                                We look up the member list when you leave this field.
+                            </p>
+                        </div>
+
+                        {/* Phone: ISD + national */}
+                        <div className="flex flex-col">
+                            <label className="text-label-md text-primary mb-2 uppercase tracking-wider">
+                                Phone Number *
+                            </label>
+                            <div className="flex gap-2">
+                                <select
+                                    value={phoneIsd}
+                                    onChange={(e) => setPhoneIsd(e.target.value)}
+                                    required
+                                    disabled={loading}
+                                    aria-label="Country calling code"
+                                    className="w-[9.5rem] shrink-0 px-2 py-3 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant"
+                                >
+                                    {COUNTRY_CALLING_CODES.map((c) => (
+                                        <option key={c.code} value={c.code}>
+                                            {c.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <input
+                                    type="tel"
+                                    value={phoneNational}
+                                    onChange={(e) =>
+                                        setPhoneNational(e.target.value.replace(/\D/g, ''))
+                                    }
+                                    onBlur={() => void lookupFromRoster()}
+                                    placeholder="9876543210"
+                                    required
+                                    disabled={loading}
+                                    inputMode="numeric"
+                                    autoComplete="tel-national"
+                                    maxLength={12}
+                                    aria-label="National phone number"
+                                    aria-invalid={Boolean(
+                                        phoneNational && phoneValidationError(phoneIsd, phoneNational)
+                                    )}
+                                    className="min-w-0 flex-1 px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant"
+                                />
+                            </div>
+                            <p
+                                className={`text-label-sm mt-1 ${
+                                    phoneNational && phoneValidationError(phoneIsd, phoneNational)
+                                        ? 'text-error'
+                                        : 'text-on-surface-variant'
+                                }`}
+                            >
+                                {phoneNational && phoneValidationError(phoneIsd, phoneNational)
+                                    ? phoneValidationError(phoneIsd, phoneNational)
+                                    : lookingUp
+                                      ? 'Looking up the member list…'
+                                      : phoneInputHint(phoneIsd)}
+                            </p>
+                        </div>
+
+                        {prefillHint ? (
+                            <p role="status" className="text-label-sm text-primary">
+                                {prefillHint}
+                            </p>
+                        ) : null}
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="flex flex-col">
                                 <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="first-name">
@@ -213,27 +402,6 @@ function SignupForm() {
                             </div>
                         </div>
 
-                        {/* Email Field */}
-                        <div className="flex flex-col">
-                            <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="email">
-                                Email Address *
-                            </label>
-                            <input
-                                id="email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="you@gmail.com"
-                                required
-                                autoComplete="email"
-                                disabled={loading}
-                                className={fieldClass}
-                            />
-                            <p className="text-label-sm text-on-surface-variant mt-1">
-                                Public email only (Gmail, Yahoo, Outlook, iCloud, Proton, Rediffmail, AOL, Zoho)
-                            </p>
-                        </div>
-
                         <div className="flex flex-col">
                             <label className="text-label-md text-primary mb-2 uppercase tracking-wider" htmlFor="username">
                                 Username
@@ -250,58 +418,6 @@ function SignupForm() {
                             />
                             <p className="text-label-sm text-on-surface-variant mt-1">
                                 Letters, numbers and underscores only. Leave blank to use your email. Your username will be {usernamePreview}.
-                            </p>
-                        </div>
-
-                        {/* Phone: ISD + national */}
-                        <div className="flex flex-col">
-                            <label className="text-label-md text-primary mb-2 uppercase tracking-wider">
-                                Phone Number *
-                            </label>
-                            <div className="flex gap-2">
-                                <select
-                                    value={phoneIsd}
-                                    onChange={(e) => setPhoneIsd(e.target.value)}
-                                    required
-                                    disabled={loading}
-                                    aria-label="Country calling code"
-                                    className="w-[9.5rem] shrink-0 px-2 py-3 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant"
-                                >
-                                    {COUNTRY_CALLING_CODES.map((c) => (
-                                        <option key={c.code} value={c.code}>
-                                            {c.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <input
-                                    type="tel"
-                                    value={phoneNational}
-                                    onChange={(e) =>
-                                        setPhoneNational(e.target.value.replace(/\D/g, ''))
-                                    }
-                                    placeholder="9876543210"
-                                    required
-                                    disabled={loading}
-                                    inputMode="numeric"
-                                    autoComplete="tel-national"
-                                    maxLength={12}
-                                    aria-label="National phone number"
-                                    aria-invalid={Boolean(
-                                        phoneNational && phoneValidationError(phoneIsd, phoneNational)
-                                    )}
-                                    className="min-w-0 flex-1 px-4 py-3.5 rounded-lg border border-outline-variant text-body-sm bg-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all disabled:bg-surface-container disabled:text-on-surface-variant"
-                                />
-                            </div>
-                            <p
-                                className={`text-label-sm mt-1 ${
-                                    phoneNational && phoneValidationError(phoneIsd, phoneNational)
-                                        ? 'text-error'
-                                        : 'text-on-surface-variant'
-                                }`}
-                            >
-                                {phoneNational && phoneValidationError(phoneIsd, phoneNational)
-                                    ? phoneValidationError(phoneIsd, phoneNational)
-                                    : phoneInputHint(phoneIsd)}
                             </p>
                         </div>
 

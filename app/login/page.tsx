@@ -3,7 +3,7 @@
 
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { safeRegistrationNext } from '@/lib/events/choose-event';
 import PasswordInput from '@/components/password-input';
 import BackHomeLink from '@/components/back-home-link';
@@ -21,7 +21,6 @@ function LoginForm() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const router = useRouter();
     const searchParams = useSearchParams();
 
     async function handleLogin(e: React.FormEvent) {
@@ -33,6 +32,7 @@ function LoginForm() {
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ username, password }),
             });
             const payload = await res.json().catch(() => ({}));
@@ -42,22 +42,23 @@ function LoginForm() {
                 return;
             }
 
-            const meRes = await fetch('/api/auth/me');
+            const meRes = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
             const me = meRes.ok ? await meRes.json() : null;
             const next = safeRegistrationNext(searchParams.get('next'));
+            let dest = '/registration';
             if (me?.role === 'admin') {
-                router.push(
+                dest =
                     next && (next === '/admin-app' || next.startsWith('/admin-app/') || next.startsWith('/admin-app?'))
                         ? next
-                        : '/admin'
-                );
+                        : '/admin';
             } else if (next) {
-                router.push(next);
+                dest = next;
             } else if (me?.jubilee_reg_status === 'paid') {
-                router.push('/member');
-            } else {
-                router.push('/registration');
+                dest = '/member';
             }
+
+            // Hard navigate so a hung soft transition can't leave "Signing in..." forever.
+            window.location.assign(dest);
         } catch (err) {
             setError('An unexpected error occurred');
             setLoading(false);

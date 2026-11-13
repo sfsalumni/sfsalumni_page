@@ -32,6 +32,17 @@ Run in SQL Editor, **filename order**:
 26. `20261109090000_event_registration_donation_link.sql`
 27. `20261109120000_jubilee_status_from_registrations.sql`
 28. `20261109130000_gate_partial_checkin.sql`
+29. `202611121004_parking.sql`
+30. `20261112103000_event_catalog_deleted_at.sql`
+31. `20261112120000_payment_accounts_offline_proof.sql`
+32. `20261112130000_offline_payment_proofs.sql`
+33. `20261112200000_welcome_message.sql`
+34. `20261113010000_association_about.sql`
+35. `20261113090000_welcome_message_style.sql`
+36. `20261113100000_site_links.sql`
+37. `20261113110000_event_instagram.sql`
+38. `20261113120000_payment_accounts_deleted_at.sql`
+39. `20261113140000_member_roster.sql`
 
 ## 2. Data — `02_data/`
 
@@ -47,4 +58,4 @@ node scripts/dump-supabase-inserts.mjs
 
 ## 3. Storage (not SQL)
 
-Copy buckets `committee-photos` and `alumni-memories`.
+Copy buckets `committee-photos`, `alumni-memories`, and `welcome-photos`.

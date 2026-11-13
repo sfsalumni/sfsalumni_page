@@ -9,14 +9,18 @@ import type { EventCatalog } from '@/lib/events/types';
 
 const FALLBACK = {
   id: 'fallback',
-  eyebrow: 'Celebrating 50 Years • 1976 – 2026',
-  title: 'Golden Jubilee & Alumni Homecoming',
-  body: 'Honoring 50 glorious years of transformational education, enduring memories, and fraternal unity at SFS Shanthinagar. Calling all alumni, revered faculty, and students to reunite.',
+  eyebrow: 'Welcome to SFS Alumni Association',
+  title: 'Welcome to SFS Alumni Association',
+  body: '',
   meta: '',
+  instagramUrl: null as string | null,
 };
 
 const registerClass =
   'inline-flex items-center gap-2.5 px-6 py-3.5 rounded-lg bg-secondary-container hover:bg-secondary-fixed-dim text-on-secondary-fixed text-label-md uppercase tracking-wider shadow-lg hover:shadow-xl transition-all';
+
+const instagramClass =
+  'inline-flex items-center gap-2.5 px-6 py-3.5 rounded-lg border border-secondary-fixed/50 bg-primary-container/50 hover:bg-primary-container/80 text-secondary-fixed text-label-md uppercase tracking-wider backdrop-blur-md transition-all';
 
 export default function Hero() {
   const [events, setEvents] = useState<EventCatalog[]>([]);
@@ -27,10 +31,12 @@ export default function Hero() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch('/api/events', { cache: 'no-store' });
-        if (!active || !res.ok) return;
-        const rows = (await res.json()) as EventCatalog[];
-        if (active && Array.isArray(rows)) setEvents(rows);
+        const eventsRes = await fetch('/api/events', { cache: 'no-store' });
+        if (!active) return;
+        if (eventsRes.ok) {
+          const rows = (await eventsRes.json()) as EventCatalog[];
+          if (Array.isArray(rows)) setEvents(rows);
+        }
       } catch {
         if (active) setEvents([]);
       }
@@ -65,7 +71,13 @@ export default function Hero() {
     setIndex(Math.round(el.scrollLeft / el.clientWidth));
   }
 
-  const slides = events.length ? events.map((event) => ({ id: event.id, ...heroEventCopy(event) })) : [FALLBACK];
+  const slides = events.length
+    ? events.map((event) => ({
+        id: event.id,
+        ...heroEventCopy(event),
+        instagramUrl: (event.instagram_url || '').trim() || null,
+      }))
+    : [FALLBACK];
 
   return (
     <section className="relative w-full h-[620px] lg:h-[700px] overflow-hidden -mt-20">
@@ -84,7 +96,7 @@ export default function Hero() {
         <div
           ref={scroller}
           onScroll={onScroll}
-          className="grid w-full min-w-0 max-w-3xl grid-flow-col auto-cols-[100%] overflow-x-auto snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="grid w-full min-w-0 max-w-full grid-flow-col auto-cols-[100%] overflow-x-auto snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           aria-roledescription={events.length > 1 ? 'carousel' : undefined}
           aria-label={events.length > 1 ? 'Open events' : undefined}
         >
@@ -100,7 +112,7 @@ export default function Hero() {
                 {slide.title}
               </h1>
               {slide.body ? (
-                <p className="text-body-md lg:text-body-lg text-surface-container-high leading-relaxed mb-3 max-w-2xl line-clamp-4">
+                <p className="text-body-md lg:text-body-lg text-surface-container-high leading-relaxed mb-3 w-full line-clamp-4">
                   {slide.body}
                 </p>
               ) : null}
@@ -118,6 +130,19 @@ export default function Hero() {
                     Register
                   </Link>
                 )}
+                {slide.instagramUrl ? (
+                  <a
+                    href={slide.instagramUrl}
+                    className={instagramClass}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden>
+                      photo_camera
+                    </span>
+                    Instagram
+                  </a>
+                ) : null}
               </div>
             </div>
           ))}
