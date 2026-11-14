@@ -82,15 +82,31 @@ export default function NavBar() {
         router.refresh();
     }
 
+    const menuItemClass =
+        'block w-full text-left px-3 py-2 text-sm text-primary hover:bg-surface-container rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30';
+
     const accountMenuItems = user ? (
         <>
+            <Link
+                href="/account/password"
+                role="menuitem"
+                onClick={() => setAccountOpen(false)}
+                className={menuItemClass}
+            >
+                Change password
+            </Link>
+            <Link
+                href="/account/recovery"
+                role="menuitem"
+                onClick={() => setAccountOpen(false)}
+                className={menuItemClass}
+                title="Set two answers so you can reset without email. Forgot password uses those plus your phone."
+            >
+                Recovery questions
+            </Link>
+            <div className="my-1 border-t border-outline-variant" role="separator" />
             {onPortal ? (
-                <Link
-                    href="/"
-                    role="menuitem"
-                    onClick={() => setAccountOpen(false)}
-                    className="block px-3 py-2.5 text-label-md uppercase tracking-wider text-primary hover:bg-surface-container rounded-lg"
-                >
+                <Link href="/" role="menuitem" onClick={() => setAccountOpen(false)} className={menuItemClass}>
                     Landing page
                 </Link>
             ) : (
@@ -102,7 +118,7 @@ export default function NavBar() {
                             setAccountOpen(false);
                             setAssociationOpen(true);
                         }}
-                        className="w-full text-left px-3 py-2.5 text-label-md uppercase tracking-wider text-primary hover:bg-surface-container rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        className={menuItemClass}
                     >
                         Association
                     </button>
@@ -111,7 +127,7 @@ export default function NavBar() {
                             href="/member"
                             role="menuitem"
                             onClick={() => setAccountOpen(false)}
-                            className="block px-3 py-2.5 text-label-md uppercase tracking-wider text-primary hover:bg-surface-container rounded-lg"
+                            className={menuItemClass}
                         >
                             Alumni Portal
                         </Link>
@@ -121,24 +137,23 @@ export default function NavBar() {
                             href="/admin"
                             role="menuitem"
                             onClick={() => setAccountOpen(false)}
-                            className="block px-3 py-2.5 text-label-md uppercase tracking-wider text-primary hover:bg-surface-container rounded-lg"
+                            className={menuItemClass}
                         >
                             Admin
                         </Link>
                     )}
                 </>
             )}
-            <p className="px-3 py-2 text-label-sm text-on-surface-variant truncate border-t border-outline-variant mt-1 pt-2" title={user.email}>
+            <p className="px-3 py-2 text-xs text-on-surface-variant truncate border-t border-outline-variant mt-1 pt-2" title={user.email}>
                 {user.email}
             </p>
             <button
                 type="button"
                 role="menuitem"
                 onClick={() => void handleLogout()}
-                className="w-full inline-flex items-center gap-2 px-3 py-2.5 text-label-md uppercase tracking-wider text-error hover:bg-error-container rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full text-left px-3 py-2 text-sm text-error hover:bg-error-container rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-                <span className="material-symbols-outlined text-[18px]">logout</span>
-                Logout
+                Log out
             </button>
         </>
     ) : null;
@@ -203,47 +218,42 @@ export default function NavBar() {
                     )}
 
                     {user && (
-                        <>
-                            <Link
-                                href="/account/password"
-                                className="inline-flex items-center justify-center px-2 lg:px-2.5 py-2 rounded-lg text-label-md uppercase tracking-wider text-primary hover:bg-surface-container transition-colors whitespace-nowrap"
-                                title="Change password. Set recovery questions so you can reset without email."
+                        <div className="relative" ref={accountRef}>
+                            <button
+                                type="button"
+                                onClick={() => setAccountOpen((o) => !o)}
+                                aria-expanded={accountOpen}
+                                aria-haspopup="menu"
+                                aria-controls="account-menu"
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-primary hover:bg-surface-container transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 whitespace-nowrap"
                             >
-                                Change password
-                            </Link>
-                            <Link
-                                href="/account/recovery"
-                                className="inline-flex items-center justify-center px-2 lg:px-2.5 py-2 rounded-lg text-label-md uppercase tracking-wider text-primary hover:bg-surface-container transition-colors whitespace-nowrap"
-                                title="Set two answers so you can reset without email. Forgot password uses those plus your phone."
-                            >
-                                Recovery questions
-                            </Link>
-                            <div className="relative" ref={accountRef}>
-                                <button
-                                    type="button"
-                                    onClick={() => setAccountOpen((o) => !o)}
-                                    aria-expanded={accountOpen}
-                                    aria-haspopup="menu"
-                                    aria-controls="account-menu"
-                                    className="inline-flex items-center justify-center gap-1 px-2.5 lg:px-3 py-2 rounded-lg text-label-md uppercase tracking-wider text-primary hover:bg-surface-container transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 whitespace-nowrap"
+                                Account
+                                <svg
+                                    className={`h-3.5 w-3.5 shrink-0 opacity-70 transition-transform ${accountOpen ? 'rotate-180' : ''}`}
+                                    viewBox="0 0 12 12"
+                                    fill="none"
+                                    aria-hidden
                                 >
-                                    Account
-                                    <span className="material-symbols-outlined text-[18px]" aria-hidden>
-                                        {accountOpen ? 'expand_less' : 'expand_more'}
-                                    </span>
-                                </button>
-                                {accountOpen ? (
-                                    <div
-                                        id="account-menu"
-                                        role="menu"
-                                        aria-label="Account"
-                                        className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-outline-variant bg-surface-paper shadow-lg p-1.5 z-50"
-                                    >
-                                        {accountMenuItems}
-                                    </div>
-                                ) : null}
-                            </div>
-                        </>
+                                    <path
+                                        d="M2.5 4.5 6 8l3.5-3.5"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                            </button>
+                            {accountOpen ? (
+                                <div
+                                    id="account-menu"
+                                    role="menu"
+                                    aria-label="Account"
+                                    className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-outline-variant bg-surface-paper shadow-lg p-1.5 z-50"
+                                >
+                                    {accountMenuItems}
+                                </div>
+                            ) : null}
+                        </div>
                     )}
                 </div>
 
