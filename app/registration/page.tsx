@@ -145,25 +145,15 @@ function accountContactProblem(contact: AccountContact | null): string | null {
 
 export default function RegistrationPage() {
     return (
-        <div className="flex flex-col">
-            {/* Sticky banner placed just below your global navbar */}
-            <div
-                className="sticky top-20 z-40 bg-yellow-400 w-full text-yellow-950 text-center font-semibold p-3 text-sm sm:text-base border-b border-yellow-500 shadow-sm"
-                role="alert"
-            >
-                Registration is not complete until the payment made and the qr code generated
-            </div>
-
-            <Suspense
-                fallback={
-                    <div className="py-20 flex items-center justify-center">
-                        <p className="text-body-md text-on-surface-variant">Loading...</p>
-                    </div>
-                }
-            >
-                <RegistrationPageInner />
-            </Suspense>
-        </div>
+        <Suspense
+            fallback={
+                <div className="py-20 flex items-center justify-center">
+                    <p className="text-body-md text-on-surface-variant">Loading...</p>
+                </div>
+            }
+        >
+            <RegistrationPageInner />
+        </Suspense>
     );
 }
 
@@ -195,6 +185,8 @@ function RegistrationPageInner() {
     const [eventLoaded, setEventLoaded] = useState(false);
     const [eventError, setEventError] = useState('');
     const [hasSavedReg, setHasSavedReg] = useState(false);
+    /** False until the saved registration for this event has been fetched (avoids form flash). */
+    const [regHydrated, setRegHydrated] = useState(false);
 
     const searchParams = useSearchParams();
     const supabase = createClient();
@@ -440,7 +432,10 @@ function RegistrationPageInner() {
         }
 
         // Confirmed by the committee, or fully paid: the success screen with the code.
-        if (confirmed || (next.paymentStatus === 'paid' && next.totalDuePaise === 0)) {
+        const settled =
+            confirmed || (next.paymentStatus === 'paid' && next.totalDuePaise === 0);
+        if (settled) {
+            setPendingProof(null);
             setCurrentStep('success');
         }
         return {
@@ -448,13 +443,23 @@ function RegistrationPageInner() {
             money: next,
             committeeConfirmed: confirmed,
             bankReference,
-            pendingProof: nextPending,
+            pendingProof: settled ? null : nextPending,
         };
     }
 
     useEffect(() => {
-        if (!user?.id || !event?.id || gate !== 'ok') return;
-        void loadSavedRegistration(event.id, true);
+        if (!user?.id || !event?.id || gate !== 'ok') {
+            if (gate === 'admin' || gate === null || !user) setRegHydrated(true);
+            return;
+        }
+        let active = true;
+        setRegHydrated(false);
+        void loadSavedRegistration(event.id, true).finally(() => {
+            if (active) setRegHydrated(true);
+        });
+        return () => {
+            active = false;
+        };
         // Runs once per user and event. loadSavedRegistration reads no changing state.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, event?.id, gate]);
@@ -668,7 +673,10 @@ function RegistrationPageInner() {
     // Shown amounts: the database figures until the form is edited, then a live preview.
     const displayMoney = formDirty ? previewMoney(money, formData) : money;
     const donationLocked = money.donationPaymentStatus === 'paid';
-    const verificationPending = Boolean(pendingProof);
+    const isSettled =
+        committeeConfirmed || (money.paymentStatus === 'paid' && money.totalDuePaise === 0);
+    // Do not show “awaiting verification” once the registration is confirmed / paid.
+    const verificationPending = Boolean(pendingProof) && !isSettled;
     const busy = saving;
     const formMode: RegistrationFormMode = hasSavedReg
         ? money.totalDuePaise > 0
@@ -676,7 +684,9 @@ function RegistrationPageInner() {
             : 'update'
         : 'new';
 
-    if (loading || !eventLoaded) {
+    const waitingOnSavedReg = Boolean(user && gate === 'ok' && event && !regHydrated);
+
+    if (loading || !eventLoaded || waitingOnSavedReg) {
         return (
             <div className="min-h-screen bg-surface flex items-center justify-center pt-20">
                 <div className="text-center">
@@ -695,46 +705,63 @@ function RegistrationPageInner() {
 
     if (!user) return <SignInScreen event={event} />;
 
+    const incompleteBanner = !isSettled ? (
+        <div
+            className="sticky top-20 z-40 bg-yellow-400 w-full text-yellow-950 text-center font-semibold p-3 text-sm sm:text-base border-b border-yellow-500 shadow-sm"
+            role="status"
+        >
+            {verificationPending
+                ? 'Payment submitted — waiting for committee confirmation before your QR is ready'
+                : 'Registration is not complete until payment is made and the QR code is generated'}
+        </div>
+    ) : null;
+
     if (currentStep === 'confirm_prefill' && preRegData) {
         return (
-            <ConfirmPrefillScreen
-                preRegData={preRegData}
-                candidates={preRegCandidates}
-                onAccept={acceptPreRegistration}
-                onReject={dismissPreRegistration}
-            />
+            <div className="flex flex-col">
+                {incompleteBanner}
+                <ConfirmPrefillScreen
+                    preRegData={preRegData}
+                    candidates={preRegCandidates}
+                    onAccept={acceptPreRegistration}
+                    onReject={dismissPreRegistration}
+                />
+            </div>
         );
     }
 
     if (currentStep === 'details') {
         return (
-            <RegistrationForm
-                formData={formData}
-                setFormData={setFormData}
-                accountContact={accountContact}
-                event={event}
-                formMode={formMode}
-                hasSavedReg={hasSavedReg}
-                busy={busy}
-                saving={saving}
-                money={money}
-                displayMoney={displayMoney}
-                formDirty={formDirty}
-                donationLocked={donationLocked}
-                verificationPending={verificationPending}
-                bankAccount={bankAccount}
-                onPrepareOfflinePay={prepareOfflinePay}
-                savedBankReference={savedBankReference}
-                pendingProof={pendingProof}
-                onOfflineSubmitted={(message) => {
-                    void handleOfflineSubmitted(message);
-                }}
-                saveMessage={saveMessage}
-                error={error}
-                onSubmit={(e) => {
-                    void saveRegistration(e);
-                }}
-            />
+            <div className="flex flex-col">
+                {incompleteBanner}
+                <RegistrationForm
+                    formData={formData}
+                    setFormData={setFormData}
+                    accountContact={accountContact}
+                    event={event}
+                    formMode={formMode}
+                    hasSavedReg={hasSavedReg}
+                    busy={busy}
+                    saving={saving}
+                    money={money}
+                    displayMoney={displayMoney}
+                    formDirty={formDirty}
+                    donationLocked={donationLocked}
+                    verificationPending={verificationPending}
+                    bankAccount={bankAccount}
+                    onPrepareOfflinePay={prepareOfflinePay}
+                    savedBankReference={savedBankReference}
+                    pendingProof={verificationPending ? pendingProof : null}
+                    onOfflineSubmitted={(message) => {
+                        void handleOfflineSubmitted(message);
+                    }}
+                    saveMessage={saveMessage}
+                    error={error}
+                    onSubmit={(e) => {
+                        void saveRegistration(e);
+                    }}
+                />
+            </div>
         );
     }
 

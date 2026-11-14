@@ -3,33 +3,47 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { JubileeRegStatus } from '@/lib/jubilee-cta';
+import { pendingPaymentMemberLabel } from '@/lib/payments/offline-proof';
 
-const COPY: Record<
-  JubileeRegStatus,
-  { label: string; hint: string; href?: string; hrefLabel?: string }
-> = {
-  none: {
-    label: 'Not registered',
-    hint: 'Secure your place at the Golden Jubilee reunion.',
-    href: '/registration',
-    hrefLabel: 'Register',
-  },
-  pending_payment: {
+function statusCopy(
+  status: JubileeRegStatus,
+  paymentProofPending: boolean
+): { label: string; hint: string; href?: string; hrefLabel?: string } {
+  if (status === 'none') {
+    return {
+      label: 'Not registered',
+      hint: 'Secure your place at the Golden Jubilee reunion.',
+      href: '/registration',
+      hrefLabel: 'Register',
+    };
+  }
+  if (status === 'paid') {
+    return {
+      label: 'Registered · paid',
+      hint: 'You’re confirmed. Open your registration if you need to change how many people are coming.',
+      href: '/registration',
+      hrefLabel: 'Update registration',
+    };
+  }
+  if (paymentProofPending) {
+    return {
+      label: 'Awaiting confirmation',
+      hint: 'Your Bank / UPI proof is with the committee. Your QR appears once they confirm.',
+      href: '/registration',
+      hrefLabel: 'View registration',
+    };
+  }
+  return {
     label: 'Payment pending',
     hint: 'Your details are saved — complete payment to confirm.',
     href: '/registration',
-    hrefLabel: 'Complete payment',
-  },
-  paid: {
-    label: 'Registered · paid',
-    hint: 'You’re confirmed. Open your registration if you need to change how many people are coming.',
-    href: '/registration',
-    hrefLabel: 'Update registration',
-  },
-};
+    hrefLabel: pendingPaymentMemberLabel(false),
+  };
+}
 
 export default function JubileeStatusChip() {
   const [status, setStatus] = useState<JubileeRegStatus | null>(null);
+  const [paymentProofPending, setPaymentProofPending] = useState(false);
   const [role, setRole] = useState<'alumni' | 'admin' | null>(null);
 
   useEffect(() => {
@@ -42,6 +56,7 @@ export default function JubileeStatusChip() {
         if (!active) return;
         setRole(me.role);
         setStatus((me.jubilee_reg_status as JubileeRegStatus) || 'none');
+        setPaymentProofPending(Boolean(me.payment_proof_pending));
       } catch {
         /* ignore */
       }
@@ -52,7 +67,7 @@ export default function JubileeStatusChip() {
   }, []);
 
   if (!status || role === 'admin') return null;
-  const copy = COPY[status];
+  const copy = statusCopy(status, paymentProofPending);
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-outline-variant bg-white px-5 py-4 shadow-sm">

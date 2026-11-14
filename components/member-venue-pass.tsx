@@ -13,6 +13,7 @@ import { formatCostForDisplay } from '@/lib/registration/registration';
 import { registrationPath } from '@/lib/events/choose-event';
 import { venuePassSummary } from '@/lib/events/venue-pass';
 import type { EventCatalog } from '@/lib/events/types';
+import { venuePassPaymentCue } from '@/lib/payments/offline-proof';
 
 /** One saved registration as GET /api/registration/event returns it. */
 type Registration = {
@@ -25,6 +26,8 @@ type Registration = {
   total_due_paise?: number;
   committee_confirmed?: boolean;
   registration_code?: string | null;
+  bank_reference?: string | null;
+  pending_offline_proof?: { utr?: string | null; has_screenshot?: boolean } | null;
 };
 
 type Loaded = {
@@ -154,6 +157,12 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
         const duePaise = Math.max(0, Number(reg.total_due_paise) || 0);
         // Confirmed by the committee, or nothing left to pay. Both mean the pass is valid.
         const confirmed = reg.committee_confirmed === true || (reg.payment_status === 'paid' && duePaise === 0);
+        const paymentCue = venuePassPaymentCue({
+          confirmed,
+          dueLabel: `Due ${formatCostForDisplay(duePaise)}`,
+          pendingOfflineProof: Boolean(reg.pending_offline_proof),
+          bankReference: reg.bank_reference,
+        });
 
         const summary = venuePassSummary({
           attending: reg.attending !== false,
@@ -183,14 +192,16 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
               </p>
               <p
                 className={`rounded-full px-3 py-1 text-label-sm font-bold ${
-                  confirmed ? 'bg-secondary-container text-on-secondary-fixed' : 'bg-error-container text-error'
+                  confirmed || paymentCue?.awaiting
+                    ? 'bg-secondary-container text-on-secondary-fixed'
+                    : 'bg-error-container text-error'
                 }`}
               >
                 {confirmed
                   ? reg.committee_confirmed
                     ? 'Confirmed'
                     : 'Paid'
-                  : `Due ${formatCostForDisplay(duePaise)}`}
+                  : paymentCue?.badge}
               </p>
             </div>
             <h2 className="text-headline-sm text-primary mt-3">{pass.eventTitle}</h2>
@@ -236,18 +247,24 @@ export default function MemberVenuePass({ mode = 'full' }: { mode?: 'full' | 'pa
               <p className="mt-5 text-body-sm text-on-surface-variant">
                 Your registration ID will appear here once it is issued.
               </p>
-            ) : (
-              <p className="mt-5 text-body-sm text-error">Complete payment to unlock your entry pass QR.</p>
-            )}
+            ) : paymentCue ? (
+              <p
+                className={`mt-5 text-body-sm ${
+                  paymentCue.awaiting ? 'text-on-surface-variant' : 'text-error'
+                }`}
+              >
+                {paymentCue.message}
+              </p>
+            ) : null}
 
-            {!confirmed && (
+            {paymentCue ? (
               <Link
                 href={registrationPath(pass.eventId)}
                 className="inline-flex mt-5 min-h-11 items-center px-5 py-3 rounded-lg bg-primary text-white text-label-md"
               >
-                Complete payment
+                {paymentCue.ctaLabel}
               </Link>
-            )}
+            ) : null}
 
             {confirmed && !passOnly && (
               <Link

@@ -40,6 +40,7 @@ export default function JubileeRegisterLink({
         setAccount({
           role: me.role,
           jubilee_reg_status: me.jubilee_reg_status || 'none',
+          payment_proof_pending: Boolean(me.payment_proof_pending),
         });
       } catch {
         if (active) setAccount(null);

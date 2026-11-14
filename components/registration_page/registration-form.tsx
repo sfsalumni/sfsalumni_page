@@ -27,7 +27,11 @@ import {
 import { SECTIONS } from '@/lib/registration/registration-fields';
 import type { EventCatalog } from '@/lib/events/types';
 import type { BankAccountPublic } from '@/lib/payments/bank-details';
-import { pendingProofDisplay, verificationStatusLabel } from '@/lib/payments/offline-proof';
+import {
+    pendingProofDisplay,
+    registrationFormHeading,
+    verificationStatusLabel,
+} from '@/lib/payments/offline-proof';
 import {
     BATCH_OPTIONS,
     COUNTRY_OPTIONS,
@@ -289,11 +293,7 @@ export function RegistrationForm(props: RegistrationFormProps) {
             <div className="w-full max-w-3xl">
                 <div className="bg-surface-paper rounded-2xl shadow-lg p-8 border border-surface-container-low">
                     <h1 className="text-headline-lg text-primary mb-2">
-                        {formMode === 'update'
-                            ? 'Update registration'
-                            : formMode === 'pay'
-                              ? 'Complete payment'
-                              : 'Event Registration'}
+                        {registrationFormHeading({ formMode, verificationPending })}
                     </h1>
                     <p className={`text-body-sm text-on-surface-variant ${hasSavedReg ? 'mb-4' : 'mb-8'}`}>
                         {hasSavedReg

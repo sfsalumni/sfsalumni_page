@@ -21,6 +21,57 @@ export const PENDING_PROOF_LOCK_MESSAGE =
 export const PENDING_PROOF_ALREADY_MESSAGE =
   'A Bank / UPI proof is already pending review. Wait for the committee, or contact them if you need to change the reference.';
 
+/** Nav / chip / pass CTA when money is still due. */
+export function pendingPaymentMemberLabel(proofPending: boolean): string {
+  return proofPending ? 'Awaiting confirmation' : 'Complete payment';
+}
+
+/** Registration page H1 — never say “Complete payment” while proof awaits review. */
+export function registrationFormHeading(input: {
+  formMode: 'new' | 'pay' | 'update';
+  verificationPending: boolean;
+}): string {
+  if (input.verificationPending) return 'Awaiting confirmation';
+  if (input.formMode === 'update') return 'Update registration';
+  if (input.formMode === 'pay') return 'Complete payment';
+  return 'Event Registration';
+}
+
+/**
+ * My home venue-pass payment strip. Proof submitted (pending row or bank ref) is
+ * “awaiting confirmation”, not “Complete payment”.
+ */
+export function venuePassPaymentCue(input: {
+  confirmed: boolean;
+  dueLabel: string;
+  pendingOfflineProof: boolean;
+  bankReference?: string | null;
+}): {
+  awaiting: boolean;
+  badge: string;
+  message: string;
+  ctaLabel: string;
+} | null {
+  if (input.confirmed) return null;
+  const awaiting =
+    input.pendingOfflineProof || Boolean(String(input.bankReference ?? '').trim());
+  if (awaiting) {
+    return {
+      awaiting: true,
+      badge: 'Awaiting confirmation',
+      message:
+        'Your payment is with the committee. The entry pass QR unlocks once they confirm.',
+      ctaLabel: 'View registration',
+    };
+  }
+  return {
+    awaiting: false,
+    badge: input.dueLabel,
+    message: 'Complete payment to unlock your entry pass QR.',
+    ctaLabel: pendingPaymentMemberLabel(false),
+  };
+}
+
 export function bankReferenceFromProof(input: {
   utr: string | null;
   hasScreenshot: boolean;

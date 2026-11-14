@@ -14,6 +14,22 @@ assert(
   jubileeNavCta({ role: 'alumni', jubilee_reg_status: 'pending_payment' }).label === 'Complete payment',
   'pending'
 );
+assert(
+  jubileeNavCta({
+    role: 'alumni',
+    jubilee_reg_status: 'pending_payment',
+    payment_proof_pending: true,
+  }).label === 'Awaiting confirmation',
+  'pending with proof submitted'
+);
+assert(
+  jubileeCta({
+    role: 'alumni',
+    jubilee_reg_status: 'pending_payment',
+    payment_proof_pending: true,
+  }).label === 'Awaiting confirmation',
+  'hero pending with proof'
+);
 assert(!jubileeNavCta({ role: 'alumni', jubilee_reg_status: 'paid' }).show, 'paid hides registration');
 assert(!jubileeCta({ role: 'alumni', jubilee_reg_status: 'paid' }).show, 'paid hides hero');
 assert(postAuthPath({ role: 'admin' }) === '/admin', 'admin redirect');

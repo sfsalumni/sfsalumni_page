@@ -12,7 +12,10 @@ import {
   PENDING_PROOF_LOCK_MESSAGE,
   SCREENSHOT_BANK_REFERENCE,
   bankReferenceFromProof,
+  pendingPaymentMemberLabel,
   pendingProofDisplay,
+  registrationFormHeading,
+  venuePassPaymentCue,
   verificationStatusLabel,
 } from '../lib/payments/offline-proof.ts';
 
@@ -170,6 +173,64 @@ if (shown.utr !== 'UTR99' || !shown.label.includes('UTR99') || !shown.label.incl
 }
 if (!PENDING_PROOF_LOCK_MESSAGE.includes('pending committee review')) {
   throw new Error('lock message');
+}
+
+if (pendingPaymentMemberLabel(false) !== 'Complete payment') {
+  throw new Error('cta unpaid');
+}
+if (pendingPaymentMemberLabel(true) !== 'Awaiting confirmation') {
+  throw new Error('cta awaiting');
+}
+if (registrationFormHeading({ formMode: 'pay', verificationPending: false }) !== 'Complete payment') {
+  throw new Error('heading pay');
+}
+if (registrationFormHeading({ formMode: 'pay', verificationPending: true }) !== 'Awaiting confirmation') {
+  throw new Error('heading awaiting');
+}
+if (registrationFormHeading({ formMode: 'update', verificationPending: true }) !== 'Awaiting confirmation') {
+  throw new Error('heading update awaiting');
+}
+if (registrationFormHeading({ formMode: 'new', verificationPending: false }) !== 'Event Registration') {
+  throw new Error('heading new');
+}
+
+const homeUnpaid = venuePassPaymentCue({
+  confirmed: false,
+  dueLabel: 'Due ₹1000.00',
+  pendingOfflineProof: false,
+  bankReference: '',
+});
+if (!homeUnpaid || homeUnpaid.ctaLabel !== 'Complete payment' || !homeUnpaid.message.includes('Complete payment')) {
+  throw new Error('home unpaid cue');
+}
+
+const homeAwaiting = venuePassPaymentCue({
+  confirmed: false,
+  dueLabel: 'Due ₹1000.00',
+  pendingOfflineProof: true,
+  bankReference: 'UTR99',
+});
+if (
+  !homeAwaiting ||
+  homeAwaiting.badge !== 'Awaiting confirmation' ||
+  homeAwaiting.ctaLabel !== 'View registration' ||
+  homeAwaiting.message.includes('Complete payment')
+) {
+  throw new Error('home awaiting cue');
+}
+
+const homeAwaitingByBankRef = venuePassPaymentCue({
+  confirmed: false,
+  dueLabel: 'Due ₹1000.00',
+  pendingOfflineProof: false,
+  bankReference: 'Screenshot on file',
+});
+if (!homeAwaitingByBankRef || homeAwaitingByBankRef.badge !== 'Awaiting confirmation') {
+  throw new Error('home awaiting via bank ref');
+}
+
+if (venuePassPaymentCue({ confirmed: true, dueLabel: 'Due ₹0', pendingOfflineProof: true }) !== null) {
+  throw new Error('home confirmed hides cue');
 }
 
 console.log('ok: bank details');
