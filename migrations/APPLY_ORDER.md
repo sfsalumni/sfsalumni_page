@@ -43,6 +43,8 @@ Run in SQL Editor, **filename order**:
 37. `20261113110000_event_instagram.sql`
 38. `20261113120000_payment_accounts_deleted_at.sql`
 39. `20261113140000_member_roster.sql`
+40. `20261113150000_pii_access_hardening.sql`
+41. `20261114080000_portal_menu.sql`
 
 ## 2. Data — `02_data/`
 

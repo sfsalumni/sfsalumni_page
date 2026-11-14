@@ -1,30 +1,65 @@
-import Link from 'next/link';
+'use client';
 
-const lanes: { href: string; title: string; body: string; icon: string }[] = [
-  {
-    href: '/events',
-    title: 'Events',
-    body: 'Reunions and school celebrations open for registration.',
-    icon: 'event',
-  },
-  {
-    href: '/memories',
-    title: 'Memories',
-    body: 'Browse published photos from your batch and all SFS.',
-    icon: 'photo_library',
-  },
-  {
-    href: '/member/donate',
-    title: 'Donate',
-    body: 'Support a cause — jubilee, students, or the association.',
-    icon: 'volunteer_activism',
-  },
-];
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import {
+  DAY1_PORTAL_MENU,
+  homeLanesVisible,
+  type PortalMenuFlags,
+} from '@/lib/portal-menu/menu';
+
+/** Donate stays in the sidebar only — not repeated as a home card. */
+const lanes: { href: string; title: string; body: string; icon: string; flag?: keyof PortalMenuFlags }[] =
+  [
+    {
+      href: '/events',
+      title: 'Events',
+      body: 'Reunions and school celebrations open for registration.',
+      icon: 'event',
+    },
+    {
+      href: '/memories',
+      title: 'Memories',
+      body: 'Browse published photos from your batch and all SFS.',
+      icon: 'photo_library',
+      flag: 'show_memories',
+    },
+  ];
 
 export default function HomeDestinationLanes() {
+  const [menu, setMenu] = useState<PortalMenuFlags>(DAY1_PORTAL_MENU);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/portal-menu', { cache: 'no-store' });
+        if (!active) return;
+        if (res.ok) {
+          const payload = (await res.json()) as { menu?: PortalMenuFlags };
+          if (payload.menu) setMenu(payload.menu);
+        }
+      } finally {
+        if (active) setReady(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!ready || !homeLanesVisible(menu)) return null;
+
+  const visible = lanes.filter((lane) => {
+    if (!lane.flag) return true;
+    return menu[lane.flag];
+  });
+  if (!visible.length) return null;
+
   return (
     <section className="mt-8 space-y-3" aria-label="Explore the portal">
-      {lanes.map((lane) => (
+      {visible.map((lane) => (
         <Link
           key={lane.href}
           href={lane.href}

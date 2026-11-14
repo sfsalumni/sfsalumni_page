@@ -34,6 +34,7 @@ const {
   planMemberRosterImport,
   toMemberRosterUpsert,
   assertRosterLookupQuery,
+  formatRosterClearedMessage,
 } = await import('../lib/registration/roster.ts');
 
 assert.deepEqual(normalizeRosterPhones('919573344609'), ['+919573344609']);
@@ -232,5 +233,9 @@ assert.equal(assertRosterLookupQuery({ email: 'ada@gmail.com' }).ok, true);
 assert.equal(assertRosterLookupQuery({ name: 'Ada' }).ok, false);
 assert.equal(assertRosterLookupQuery({ phone: '', email: '', name: 'Ada' }).ok, false);
 assert.equal(assertRosterLookupQuery({ phone: '+919876543210', name: 'Ada' }).ok, true);
+
+assert.equal(formatRosterClearedMessage(0), 'Roster is already empty.');
+assert.equal(formatRosterClearedMessage(1), 'Cleared 1 roster row.');
+assert.equal(formatRosterClearedMessage(1152), 'Cleared 1152 roster rows.');
 
 console.log('check-member-roster: ok');

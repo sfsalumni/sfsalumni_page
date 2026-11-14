@@ -12,15 +12,9 @@ import MemberGate from '@/components/member-gate';
 import MemberVenuePass from '@/components/member-venue-pass';
 import PortalShell from '@/components/portal-shell';
 import { registrationPath } from '@/lib/events/choose-event';
-import { heroEventCopy, type HeroCopy } from '@/lib/events/hero-copy';
 import type { EventCatalog } from '@/lib/events/types';
 import { primaryNextAction, type PrimaryNextAction } from '@/lib/portal/next-action';
 import { firstNameFromFullName } from '@/lib/portal/welcome';
-
-function pickBandEvent(events: EventCatalog[]): EventCatalog | null {
-  if (!events.length) return null;
-  return events.find((e) => e.is_primary) || events[0];
-}
 
 /** Shape of one saved registration as GET /api/registration/event returns it. */
 interface SavedRegistrationSummary {
@@ -44,7 +38,6 @@ export default function MemberPage() {
   const [welcomeReady, setWelcomeReady] = useState(false);
   const [membershipPending, setMembershipPending] = useState(false);
   const [next, setNext] = useState<PrimaryNextAction | null>(null);
-  const [band, setBand] = useState<HeroCopy | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -64,8 +57,6 @@ export default function MemberPage() {
         const listRes = await fetch('/api/events', { cache: 'no-store' });
         const list = listRes.ok ? ((await listRes.json()) as EventCatalog[]) : [];
         const events = Array.isArray(list) ? list : [];
-        const bandEvent = pickBandEvent(events);
-        if (active && bandEvent) setBand(heroEventCopy(bandEvent));
 
         if (me.role === 'admin') {
           setNext(primaryNextAction({ hasRegistration: false, anyUnpaid: false }));
@@ -141,69 +132,7 @@ export default function MemberPage() {
           </div>
         )}
 
-        <Link
-          href="/member/donate"
-          className="donate-flash mt-6 mb-2 flex items-center gap-4 sm:gap-5 rounded-2xl border px-5 py-5 sm:px-7 sm:py-6 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        >
-          <span className="material-symbols-outlined text-4xl shrink-0" aria-hidden>
-            volunteer_activism
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-label-sm uppercase tracking-[0.16em] font-bold opacity-90">
-              Support SFS
-            </p>
-            <h2 className="text-headline-sm mt-1">Donate to a cause</h2>
-            <p className="text-body-sm mt-1 opacity-90 max-w-2xl">
-              Jubilee, students, or the association — pick a cause and give in a few taps.
-            </p>
-          </div>
-          <span className="text-label-md font-bold shrink-0 hidden sm:inline">Give now →</span>
-        </Link>
-
         <HomeDestinationLanes />
-
-        <p className="mt-6 text-body-sm text-on-surface-variant">
-          <Link
-            href="/account/password"
-            className="text-primary font-bold underline underline-offset-2"
-          >
-            Change password
-          </Link>
-          {' · '}
-          <Link
-            href="/account/recovery"
-            className="text-primary font-bold underline underline-offset-2"
-          >
-            Recovery questions
-          </Link>
-          {' — '}
-          set two answers so you can reset without email. Forgot password uses those plus your phone.
-        </p>
-
-        {band ? (
-          <div className="mt-8 rounded-2xl bg-primary text-white p-8">
-            <div className="text-label-sm uppercase tracking-widest text-secondary-fixed">
-              {band.eyebrow}
-            </div>
-            <h2 className="text-headline-md mt-2">{band.title}</h2>
-            {band.body ? (
-              <p className="text-body-sm text-white/80 mt-2 max-w-2xl">{band.body}</p>
-            ) : null}
-            {band.meta ? (
-              <p className="text-label-sm uppercase tracking-widest text-secondary-fixed/90 mt-3">
-                {band.meta}
-              </p>
-            ) : null}
-            <div className="mt-4">
-              <Link
-                href="/about-association"
-                className="inline-flex items-center text-label-sm text-secondary-fixed underline underline-offset-4"
-              >
-                About the association
-              </Link>
-            </div>
-          </div>
-        ) : null}
       </MemberGate>
     </PortalShell>
   );

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { requireVerifiedAdmin } from '@/lib/auth/admin-guard';
 import { planAlumniImport, readAlumniSheet, toAccountRow } from '@/lib/alumni-import.mjs';
 import { readUniqueRecordsSheet } from '@/lib/member-roster-sheet.mjs';
-import { planMemberRosterImport } from '@/lib/registration/roster';
+import { formatRosterClearedMessage, planMemberRosterImport } from '@/lib/registration/roster';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -161,6 +161,92 @@ async function upsertRoster(buffer: Buffer) {
     skipped: planned.skipped,
     total: sheet.length,
   };
+}
+
+function rosterTableMissing(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    error.code === 'PGRST205' ||
+    /member_roster/i.test(error.message || '') ||
+    /schema cache/i.test(error.message || '')
+  );
+}
+
+async function countMemberRoster(): Promise<
+  { ok: true; count: number } | { ok: false; status: number; error: string }
+> {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from('member_roster')
+    .select('id', { count: 'exact', head: true });
+  if (error) {
+    console.error('member_roster count', error);
+    return {
+      ok: false,
+      status: rosterTableMissing(error) ? 503 : 500,
+      error: rosterTableMissing(error)
+        ? 'member_roster is not set up yet. Run migration 20261113140000_member_roster.sql in Supabase.'
+        : 'Could not read the member roster',
+    };
+  }
+  return { ok: true, count: count ?? 0 };
+}
+
+async function clearMemberRoster(): Promise<
+  { ok: true; deleted: number } | { ok: false; status: number; error: string }
+> {
+  const counted = await countMemberRoster();
+  if (!counted.ok) return counted;
+  if (counted.count === 0) return { ok: true, deleted: 0 };
+
+  const admin = createAdminClient();
+  // PostgREST requires a filter for DELETE; match every real row.
+  const { error } = await admin.from('member_roster').delete().neq('record_id', '');
+  if (error) {
+    console.error('member_roster clear', error);
+    return {
+      ok: false,
+      status: rosterTableMissing(error) ? 503 : 500,
+      error: rosterTableMissing(error)
+        ? 'member_roster is not set up yet. Run migration 20261113140000_member_roster.sql in Supabase.'
+        : 'Could not clear the member roster',
+    };
+  }
+  return { ok: true, deleted: counted.count };
+}
+
+export async function GET() {
+  try {
+    const me = await requireVerifiedAdmin();
+    if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const result = await countMemberRoster();
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({ kind: 'roster', count: result.count });
+  } catch (err) {
+    console.error('admin import get', err);
+    return NextResponse.json({ error: 'Could not read the member roster' }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const me = await requireVerifiedAdmin();
+    if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const result = await clearMemberRoster();
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({
+      kind: 'roster',
+      deleted: result.deleted,
+      message: formatRosterClearedMessage(result.deleted),
+    });
+  } catch (err) {
+    console.error('admin import delete', err);
+    return NextResponse.json({ error: 'Could not clear the member roster' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

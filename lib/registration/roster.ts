@@ -61,6 +61,14 @@ export function assertRosterLookupQuery(query: {
   return { ok: false, error: 'Enter a phone number or email to look up' };
 }
 
+/** Admin Import copy after clearing member_roster. */
+export function formatRosterClearedMessage(deleted: number): string {
+  const n = Math.max(0, Math.floor(Number(deleted) || 0));
+  if (n === 0) return 'Roster is already empty.';
+  if (n === 1) return 'Cleared 1 roster row.';
+  return `Cleared ${n} roster rows.`;
+}
+
 export type RosterMatchResult = {
   kind: 'exact' | 'confirm' | 'none';
   matches: RosterPrefill[];

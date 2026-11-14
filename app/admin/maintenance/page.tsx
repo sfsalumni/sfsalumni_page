@@ -8,6 +8,22 @@ import {
   type MaintenanceBulkScope,
   type MemberPurgeCounts,
 } from '@/lib/admin/member-purge';
+import {
+  DAY1_PORTAL_MENU,
+  type PortalMenuFlags,
+} from '@/lib/portal-menu/menu';
+
+const MENU_TOGGLES: { key: keyof PortalMenuFlags; label: string; hint: string }[] = [
+  { key: 'show_donate', label: 'Donate', hint: 'Sidebar only (not repeated on Home)' },
+  { key: 'show_stories', label: 'Stories', hint: 'Sidebar link' },
+  { key: 'show_memories', label: 'Memories', hint: 'Sidebar (+ home lane when lanes on)' },
+  { key: 'show_submissions', label: 'My submissions', hint: 'Sidebar link' },
+  {
+    key: 'show_home_lanes',
+    label: 'Home explore lanes',
+    hint: 'Cards under the pass (Events / Memories when enabled)',
+  },
+];
 
 type MemberRow = {
   id: string;
@@ -49,6 +65,43 @@ export default function AdminMaintenancePage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [menu, setMenu] = useState<PortalMenuFlags>(DAY1_PORTAL_MENU);
+  const [menuBusy, setMenuBusy] = useState(false);
+  const [menuMessage, setMenuMessage] = useState('');
+  const [menuError, setMenuError] = useState('');
+
+  const loadMenu = useCallback(async () => {
+    const res = await fetch('/api/admin/portal-menu', { cache: 'no-store' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMenuError(payload.error || 'Could not load portal menu');
+      return;
+    }
+    setMenuError('');
+    if (payload.menu) setMenu(payload.menu as PortalMenuFlags);
+  }, []);
+
+  async function saveMenu() {
+    setMenuBusy(true);
+    setMenuMessage('');
+    setMenuError('');
+    try {
+      const res = await fetch('/api/admin/portal-menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(menu),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMenuError(payload.error || 'Could not save portal menu');
+        return;
+      }
+      if (payload.menu) setMenu(payload.menu as PortalMenuFlags);
+      setMenuMessage('Portal menu saved. Alumni see the new links on refresh.');
+    } finally {
+      setMenuBusy(false);
+    }
+  }
 
   const loadList = useCallback(async (search: string) => {
     setLoading(true);
@@ -69,6 +122,10 @@ export default function AdminMaintenancePage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    void loadMenu();
+  }, [loadMenu]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -211,6 +268,51 @@ export default function AdminMaintenancePage() {
         <code className="text-label-sm">{MAINTENANCE_BULK_CONFIRM}</code> to unlock bulk actions.
         Membership wipe skips you and other admins.
       </p>
+
+      <section className="rounded-2xl border border-outline-variant bg-white p-5 space-y-4 mb-8 max-w-2xl">
+        <div>
+          <h3 className="text-headline-sm text-primary">Portal menu</h3>
+          <p className="text-body-sm text-on-surface-variant mt-1">
+            Day‑1 defaults hide Donate, Stories, Memories, Submissions, and home explore lanes.
+            Home and Events always stay in the sidebar.
+          </p>
+        </div>
+        {menuError ? (
+          <p className="rounded-lg bg-error-container text-error text-body-sm p-3">{menuError}</p>
+        ) : null}
+        {menuMessage ? (
+          <p className="rounded-lg bg-secondary-container text-on-secondary-fixed text-body-sm p-3">
+            {menuMessage}
+          </p>
+        ) : null}
+        <ul className="space-y-3">
+          {MENU_TOGGLES.map(({ key, label, hint }) => (
+            <li key={key}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={menu[key]}
+                  disabled={menuBusy}
+                  onChange={(e) => setMenu((prev) => ({ ...prev, [key]: e.target.checked }))}
+                />
+                <span>
+                  <span className="text-body-md text-primary font-medium">{label}</span>
+                  <span className="block text-body-sm text-on-surface-variant">{hint}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          disabled={menuBusy}
+          onClick={() => void saveMenu()}
+          className="rounded-lg bg-primary text-on-primary px-5 py-3 text-label-md uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+        >
+          {menuBusy ? 'Saving…' : 'Save portal menu'}
+        </button>
+      </section>
 
       {error ? (
         <p className="rounded-lg bg-error-container text-error text-body-sm p-3 mb-4">{error}</p>

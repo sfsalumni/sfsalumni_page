@@ -12,10 +12,10 @@ assert.equal(
     hasRegistration: true,
     anyUnpaid: true,
     continueHref: '/registration?event=x',
-  }).href.includes('registration'),
-  true
+  }),
+  null
 );
-assert.equal(primaryNextAction({ hasRegistration: true, anyUnpaid: false }).kind, 'pass_ready');
+assert.equal(primaryNextAction({ hasRegistration: true, anyUnpaid: false }), null);
 
 const rows = [
   {

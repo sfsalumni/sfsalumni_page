@@ -4,8 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import GetAppDialog from '@/components/get-app-dialog';
+import {
+  DAY1_PORTAL_MENU,
+  filterPortalNavLinks,
+  type PortalMenuFlags,
+  type PortalNavLink,
+} from '@/lib/portal-menu/menu';
 
-const baseLinks: { href: string; label: string; emphasize?: boolean }[] = [
+const baseLinks: PortalNavLink[] = [
   { href: '/member', label: 'Home' },
   { href: '/member/donate', label: 'Donate', emphasize: true },
   { href: '/events', label: 'Events' },
@@ -37,16 +43,26 @@ export default function PortalShell({
   const path = usePathname() || '';
   const [isAdmin, setIsAdmin] = useState(false);
   const [getAppOpen, setGetAppOpen] = useState(false);
+  const [menu, setMenu] = useState<PortalMenuFlags>(DAY1_PORTAL_MENU);
 
   useEffect(() => {
     if (!sidebar) return;
     let active = true;
     (async () => {
       try {
-        const res = await fetch('/api/auth/me');
-        if (!active || !res.ok) return;
-        const me = await res.json();
-        if (active) setIsAdmin(me.role === 'admin' && me.member_status === 'verified');
+        const [meRes, menuRes] = await Promise.all([
+          fetch('/api/auth/me'),
+          fetch('/api/portal-menu', { cache: 'no-store' }),
+        ]);
+        if (!active) return;
+        if (meRes.ok) {
+          const me = await meRes.json();
+          if (active) setIsAdmin(me.role === 'admin' && me.member_status === 'verified');
+        }
+        if (menuRes.ok) {
+          const payload = (await menuRes.json()) as { menu?: PortalMenuFlags };
+          if (active && payload.menu) setMenu(payload.menu);
+        }
       } catch {
         if (active) setIsAdmin(false);
       }
@@ -56,9 +72,8 @@ export default function PortalShell({
     };
   }, [sidebar]);
 
-  const links = isAdmin
-    ? [...baseLinks, { href: '/admin', label: 'Admin' }]
-    : baseLinks;
+  const filtered = filterPortalNavLinks(baseLinks, menu);
+  const links = isAdmin ? [...filtered, { href: '/admin', label: 'Admin' }] : filtered;
 
   return (
     <main className="min-h-screen bg-surface pt-24 pb-16 print:pt-0 print:pb-0 print:bg-white">
