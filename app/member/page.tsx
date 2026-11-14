@@ -5,39 +5,18 @@
 
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import HomeDestinationLanes from '@/components/home-destination-lanes';
 import MemberGate from '@/components/member-gate';
 import MemberVenuePass from '@/components/member-venue-pass';
 import PortalShell from '@/components/portal-shell';
-import { registrationPath } from '@/lib/events/choose-event';
-import type { EventCatalog } from '@/lib/events/types';
-import { primaryNextAction, type PrimaryNextAction } from '@/lib/portal/next-action';
 import { firstNameFromFullName } from '@/lib/portal/welcome';
-
-/** Shape of one saved registration as GET /api/registration/event returns it. */
-interface SavedRegistrationSummary {
-  total_due_paise?: number;
-  committee_confirmed?: boolean;
-  payment_status?: string;
-}
-
-/**
- * Whether a saved registration still needs the member to act. Confirmed registrations never do.
- * Otherwise action is needed only while the server reports money still due.
- */
-function needsAction(reg: SavedRegistrationSummary): boolean {
-  if (reg.committee_confirmed === true) return false;
-  return Math.max(0, Number(reg.total_due_paise) || 0) > 0;
-}
 
 export default function MemberPage() {
   const [firstName, setFirstName] = useState('friend');
   const [batch, setBatch] = useState<number | null>(null);
   const [welcomeReady, setWelcomeReady] = useState(false);
   const [membershipPending, setMembershipPending] = useState(false);
-  const [next, setNext] = useState<PrimaryNextAction | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -53,43 +32,8 @@ export default function MemberPage() {
         const blocked = status === 'rejected' || status === 'suspended';
         if (!blocked) setWelcomeReady(true);
         setMembershipPending(status === 'pending');
-
-        const listRes = await fetch('/api/events', { cache: 'no-store' });
-        const list = listRes.ok ? ((await listRes.json()) as EventCatalog[]) : [];
-        const events = Array.isArray(list) ? list : [];
-
-        if (me.role === 'admin') {
-          setNext(primaryNextAction({ hasRegistration: false, anyUnpaid: false }));
-          return;
-        }
-
-        if (!listRes.ok || !active) {
-          setNext(primaryNextAction({ hasRegistration: false, anyUnpaid: false }));
-          return;
-        }
-
-        let hasRegistration = false;
-        let anyUnpaid = false;
-        let continueHref: string | undefined;
-
-        for (const event of events) {
-          const regRes = await fetch(`/api/registration/event?eventId=${encodeURIComponent(event.id)}`, {
-            cache: 'no-store',
-          });
-          if (!regRes.ok || !active) continue;
-          const payload = (await regRes.json()) as { registration?: SavedRegistrationSummary | null };
-          if (!payload.registration) continue;
-          hasRegistration = true;
-          if (needsAction(payload.registration)) {
-            anyUnpaid = true;
-            if (!continueHref) continueHref = registrationPath(event.id);
-          }
-        }
-        if (active) {
-          setNext(primaryNextAction({ hasRegistration, anyUnpaid, continueHref }));
-        }
       } catch {
-        if (active) setNext(primaryNextAction({ hasRegistration: false, anyUnpaid: false }));
+        /* keep defaults */
       }
     })();
     return () => {
@@ -120,17 +64,6 @@ export default function MemberPage() {
         ) : null}
 
         <MemberVenuePass />
-
-        {next && (
-          <div className="mb-2">
-            <Link
-              href={next.href}
-              className="inline-flex items-center rounded-full bg-primary text-on-primary px-6 py-3 text-label-md font-bold hover:bg-primary-container transition-colors cursor-pointer"
-            >
-              {next.label}
-            </Link>
-          </div>
-        )}
 
         <HomeDestinationLanes />
       </MemberGate>

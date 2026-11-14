@@ -8,15 +8,9 @@ import {
   type PortalMenuFlags,
 } from '@/lib/portal-menu/menu';
 
-/** Donate stays in the sidebar only — not repeated as a home card. */
+/** Events stays in the sidebar only — not repeated as a home card. */
 const lanes: { href: string; title: string; body: string; icon: string; flag?: keyof PortalMenuFlags }[] =
   [
-    {
-      href: '/events',
-      title: 'Events',
-      body: 'Reunions and school celebrations open for registration.',
-      icon: 'event',
-    },
     {
       href: '/memories',
       title: 'Memories',
